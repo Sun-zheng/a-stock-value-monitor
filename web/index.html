@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>十年价值策略控制台</title>
+  <style>
+    :root{--ink:#17201b;--muted:#68756d;--paper:#f4f1e8;--card:#fffdf7;--line:#d9d3c4;--green:#174f3b;--gold:#b4802b;--red:#a54136}
+    *{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.55 "Segoe UI","Microsoft YaHei",sans-serif}
+    header{padding:34px max(24px,6vw) 28px;background:linear-gradient(120deg,#123d30,#1d5f48);color:white}
+    header p{max-width:850px;color:#dce9e2;margin:8px 0 0}h1{margin:0;font-size:30px}h2{font-size:19px;margin:0 0 16px}
+    main{max-width:1320px;margin:0 auto;padding:26px 24px 60px}.grid{display:grid;grid-template-columns:repeat(12,1fr);gap:18px}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px;box-shadow:0 8px 22px rgba(31,45,36,.05)}
+    .span4{grid-column:span 4}.span5{grid-column:span 5}.span7{grid-column:span 7}.span8{grid-column:span 8}.span12{grid-column:span 12}
+    .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}.kpi{padding:14px;border-radius:10px;background:#f2f5f0}.kpi b{display:block;font-size:23px;color:var(--green)}
+    label{display:block;color:var(--muted);font-size:13px;margin-bottom:5px}input{width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;background:white;font:inherit}
+    .formgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:13px}.weights{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+    .weight{padding:12px;background:#f7f4ec;border-radius:9px}.weight strong{display:block;min-height:44px;font-size:13px}
+    button{border:0;border-radius:9px;padding:11px 16px;font-weight:700;cursor:pointer;background:var(--green);color:white;margin-right:8px}
+    button.secondary{background:var(--gold)}button.ghost{background:#e6ebe7;color:var(--green)}
+    .status{padding:10px 12px;border-left:4px solid var(--gold);background:#fbf5e8;margin:14px 0}.ok{border-color:var(--green)}.bad{border-color:var(--red)}
+    table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;padding:9px;border-bottom:1px solid #e6e0d3}th{color:var(--muted);font-weight:600}
+    .pill{display:inline-block;padding:3px 8px;border-radius:999px;background:#e4eee8;color:var(--green);font-size:12px}.note{color:var(--muted);font-size:13px}
+    @media(max-width:900px){.span4,.span5,.span7,.span8{grid-column:span 12}.formgrid,.weights,.kpis{grid-template-columns:1fr 1fr}}
+    @media(max-width:560px){.formgrid,.weights,.kpis{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+<header>
+  <h1>Buffett + Munger 十年价值策略控制台</h1>
+  <p>把“好公司、好价格、可持续成长、避免永久性损失”拆成九个可审计维度。页面只修改公开策略参数，不显示或接触任何密钥。</p>
+</header>
+<main>
+  <div id="message" class="status">正在读取策略状态…</div>
+  <div class="grid">
+    <section class="card span12">
+      <h2>当前运行状态</h2>
+      <div class="kpis">
+        <div class="kpi"><span>下次运行</span><b id="nextRun">-</b></div>
+        <div class="kpi"><span>候选检查</span><b id="checked">-</b></div>
+        <div class="kpi"><span>国内全A股基准</span><b id="benchmark">-</b></div>
+        <div class="kpi"><span>正式推荐</span><b id="formal">-</b></div>
+        <div class="kpi"><span>观察股票</span><b id="watch">-</b></div>
+      </div>
+      <p id="dataTime" class="note">数据时点：-</p>
+    </section>
+    <section class="card span5">
+      <h2>策略门槛</h2>
+      <div class="formgrid">
+        <div><label>开始分析时间</label><input id="run_time" type="time"></div>
+        <div><label>正式推荐分数</label><input id="formal_score" type="number" min="0" max="100"></div>
+        <div><label>正式安全边际 %</label><input id="formal_margin" type="number" min="0" max="100"></div>
+        <div><label>观察分数</label><input id="watch_score" type="number" min="0" max="100"></div>
+        <div><label>候选检查数量</label><input id="candidate_limit" type="number" min="5" max="500"></div>
+        <div><label>观察上限</label><input id="max_watch" type="number" min="0" max="5"></div>
+      </div>
+      <p class="note">正式推荐固定最多1只。缺失数据不加分，特殊行业无专用模型不得正式推荐。</p>
+    </section>
+    <section class="card span7">
+      <h2>九维权重（合计必须为100）</h2>
+      <div id="weights" class="weights"></div>
+    </section>
+    <section class="card span12">
+      <button class="action" onclick="saveConfig()" disabled>保存策略</button>
+      <button class="action secondary" onclick="applySchedule()" disabled>保存并应用本机调度</button>
+      <button class="action ghost" onclick="validateStrategy()" disabled>运行无交付策略验收</button>
+      <span id="weightTotal" class="pill">权重合计 -</span>
+    </section>
+    <section class="card span12">
+      <h2>最新候选与显式结论</h2>
+      <table><thead><tr><th>类型</th><th>代码</th><th>名称</th><th>总分</th><th>安全边际</th><th>市场错配</th><th>已计价预期</th><th>为何现在</th><th>十年结论</th><th>反向失败清单</th></tr></thead><tbody id="candidates"></tbody></table>
+    </section>
+  </div>
+</main>
+<script>
+let state={}; const dims=["生意质量与护城河","管理层与资本配置","盈利能力与韧性","财务安全","现金流质量","十年成长跑道","估值与安全边际","股东回报","芒格反向清单"];
+function msg(text,kind="ok"){const el=document.querySelector("#message");el.textContent=text;el.className="status "+kind}
+function total(){let n=0,ready=true;dims.forEach((_,i)=>{const input=document.querySelector("#w"+i);if(!input){ready=false;return}n+=Number(input.value||0)});document.querySelector("#weightTotal").textContent=ready?"权重合计 "+n:"权重合计 -";return ready?n:null}
+async function load(){const r=await fetch("/api/state");state=await r.json();const s=state.strategy;
+["run_time","formal_score","formal_margin","watch_score","candidate_limit","max_watch"].forEach(k=>document.querySelector("#"+k).value=s[k]);
+const box=document.querySelector("#weights");box.innerHTML="";dims.forEach((d,i)=>{box.insertAdjacentHTML("beforeend",`<div class="weight"><strong>${d}</strong><input id="w${i}" type="number" min="0" max="30" step="0.5" value="${s.weights[d]}" oninput="total()"></div>`)});total();
+const scan=state.scan||{};document.querySelector("#nextRun").textContent=state.schedule?.next_run||"-";document.querySelector("#checked").textContent=(scan["正式条件检查数量"]||0)+"/"+(scan["估值轻筛通过数量"]||0);document.querySelector("#benchmark").textContent=scan["国内全市场基准股票数量"]??"-";document.querySelector("#formal").textContent=scan["最终推荐数量"]??"-";document.querySelector("#watch").textContent=scan["观察股票数量"]??"-";document.querySelector("#dataTime").textContent="数据时点："+(scan["行情数据时间"]||"-")+"；估值交易日："+(scan["估值数据交易日"]||"-")+"；基准范围："+(scan["行业基准范围"]||"-");
+const rows=[...(scan["正式推荐股票"]||[]).map(x=>["正式推荐",x]),...(scan["观察股票"]||[]).map(x=>["观察",x])];document.querySelector("#candidates").innerHTML=rows.map(([t,x])=>`<tr><td><span class="pill">${t}</span></td><td>${x["代码"]}</td><td>${x["名称"]}</td><td>${x["综合评分"]}</td><td>${x["安全边际"]}</td><td>${x["市场错配判断"]||"数据不足"}</td><td>${x["已计价预期"]||"数据不足"}</td><td>${x["为何现在"]||"数据不足"}</td><td>${x["十年持有结论"]||"数据不足"}</td><td>${x["芒格反向失败清单"]||"数据不足"}</td></tr>`).join("")||'<tr><td colspan="10">暂无候选</td></tr>';document.querySelectorAll(".action").forEach(x=>x.disabled=false);msg("配置已加载。候选仅限沪深主板，同行判断使用国内全A股；任务错过计划时间后会在开机时补跑。")}
+function payload(){const s=structuredClone(state.strategy);["run_time","formal_score","formal_margin","watch_score","candidate_limit","max_watch"].forEach(k=>s[k]=document.querySelector("#"+k).type==="time"?document.querySelector("#"+k).value:Number(document.querySelector("#"+k).value));dims.forEach((d,i)=>s.weights[d]=Number(document.querySelector("#w"+i).value));return s}
+async function saveConfig(){if(total()!==100){msg("九维权重合计必须为100","bad");return}const r=await fetch("/api/config",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload())});const d=await r.json();if(!d.ok){msg(d.error,"bad");return}state.strategy=d.strategy;msg("策略已保存。")}
+async function applySchedule(){await saveConfig();const r=await fetch("/api/apply-schedule",{method:"POST"});const d=await r.json();msg(d.ok?"调度已应用，下次运行："+d.schedule.NextRunTime:d.error,d.ok?"ok":"bad");if(d.ok)load()}
+async function validateStrategy(){msg("正在运行无交付策略验收，请稍候…");const r=await fetch("/api/validate",{method:"POST"});const d=await r.json();msg(d.ok?"策略验收通过。":"策略验收失败："+(d.error||d.output)," "+(d.ok?"ok":"bad"));if(d.ok)load()}
+load().catch(e=>msg("读取失败："+e,"bad"));
+</script>
+</body>
+</html>

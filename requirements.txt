@@ -1,0 +1,7 @@
+akshare>=1.16.0
+pandas>=2.2.0
+python-dotenv>=1.0.1
+requests>=2.32.0
+pytest>=8.0.0
+tushare>=1.4.21
+pyarrow>=16.0.0

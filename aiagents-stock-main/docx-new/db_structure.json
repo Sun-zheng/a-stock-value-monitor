@@ -1,0 +1,102 @@
+{
+  "analysis_records": [
+    {
+      "id": 0,
+      "name": "id",
+      "type": "INTEGER",
+      "notnull": 0,
+      "default": null,
+      "pk": 1
+    },
+    {
+      "id": 1,
+      "name": "symbol",
+      "type": "TEXT",
+      "notnull": 1,
+      "default": null,
+      "pk": 0
+    },
+    {
+      "id": 2,
+      "name": "stock_name",
+      "type": "TEXT",
+      "notnull": 0,
+      "default": null,
+      "pk": 0
+    },
+    {
+      "id": 3,
+      "name": "analysis_date",
+      "type": "TEXT",
+      "notnull": 1,
+      "default": null,
+      "pk": 0
+    },
+    {
+      "id": 4,
+      "name": "period",
+      "type": "TEXT",
+      "notnull": 1,
+      "default": null,
+      "pk": 0
+    },
+    {
+      "id": 5,
+      "name": "stock_info",
+      "type": "TEXT",
+      "notnull": 0,
+      "default": null,
+      "pk": 0
+    },
+    {
+      "id": 6,
+      "name": "agents_results",
+      "type": "TEXT",
+      "notnull": 0,
+      "default": null,
+      "pk": 0
+    },
+    {
+      "id": 7,
+      "name": "discussion_result",
+      "type": "TEXT",
+      "notnull": 0,
+      "default": null,
+      "pk": 0
+    },
+    {
+      "id": 8,
+      "name": "final_decision",
+      "type": "TEXT",
+      "notnull": 0,
+      "default": null,
+      "pk": 0
+    },
+    {
+      "id": 9,
+      "name": "created_at",
+      "type": "TEXT",
+      "notnull": 1,
+      "default": null,
+      "pk": 0
+    }
+  ],
+  "sqlite_sequence": [
+    {
+      "id": 0,
+      "name": "name",
+      "type": "",
+      "notnull": 0,
+      "default": null,
+      "pk": 0
+    },
+    {
+      "id": 1,
+      "name": "seq",
+      "type": "",
+      "notnull": 0,
+      "default": null,
+      "pk": 0
+    }
+  ]
+}

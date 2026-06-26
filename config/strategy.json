@@ -1,0 +1,32 @@
+{
+  "version": 2,
+  "name": "Buffett-Munger A股全市场十年价值策略",
+  "recommendation_scope": "all_a_share",
+  "run_time": "14:10",
+  "formal_score": 80,
+  "formal_margin": 25,
+  "watch_score": 68,
+  "candidate_limit": 500,
+  "max_formal": 1,
+  "max_watch": 5,
+  "weights": {
+    "生意质量与护城河": 15,
+    "管理层与资本配置": 10,
+    "盈利能力与韧性": 15,
+    "财务安全": 10,
+    "现金流质量": 15,
+    "十年成长跑道": 10,
+    "估值与安全边际": 15,
+    "股东回报": 5,
+    "芒格反向清单": 5
+  },
+  "quality_gates": {
+    "生意质量与护城河": 8,
+    "管理层与资本配置": 5,
+    "盈利能力与韧性": 8,
+    "财务安全": 5,
+    "现金流质量": 8,
+    "十年成长跑道": 4,
+    "芒格反向清单": 3
+  }
+}

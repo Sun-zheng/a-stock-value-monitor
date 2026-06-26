@@ -1,0 +1,46 @@
+.env
+.env.*
+!.env.example
+*.env
+secrets/
+
+.venv/
+venv/
+ENV/
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Runtime outputs and local market data
+data/
+logs/*
+!logs/.gitkeep
+reports/*
+!reports/.gitkeep
+
+# Databases and large local artifacts
+*.db
+*.sqlite
+*.sqlite3
+*.parquet
+*.csv
+*.xlsx
+*.xls
+*.docx
+
+# Nested app runtime artifacts
+aiagents-stock-main/.env
+aiagents-stock-main/database/files/
+aiagents-stock-main/run_logs/
+aiagents-stock-main/.streamlit/secrets.toml
+aiagents-stock-main/.playwright-mcp/
+aiagents-stock-main/归档/
+
+# Local editor/system files
+.idea/
+.vscode/
+.DS_Store
