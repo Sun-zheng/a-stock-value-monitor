@@ -1,0 +1,2 @@
+"""Index fund research strategy."""
+

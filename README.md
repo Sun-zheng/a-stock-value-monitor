@@ -14,7 +14,8 @@
 - 每日最多 1 只正式推荐、最多 5 只观察股票。
 - 交付前调用 `aiagents-stock-main` 的网页统一股票分析流程，对正式推荐和观察股票执行技术、基本面、资金面、风险、市场情绪、新闻六类分析师复核。
 - 生成本地 Markdown/JSON 报告，并可通过飞书多维表格和 SMTP 邮件交付。
-- 提供 Streamlit 管理端查看运行状态、历史数据和每日价值策略。
+- 提供 Streamlit 管理端查看运行状态、历史数据、每日价值策略和指数基金回撤研究。
+- 指数基金研究支持 ETF 流动性过滤、历史高点回撤筛选、多分析师规则复核、最低点/回涨确认点/修复周期估算，并可发送邮件报告。
 
 ## 项目结构
 
@@ -62,6 +63,15 @@ AIAGENTS_ENV_FILE=~/.config/a-stock-value-monitor/aiagents.env
 
 该文件不要提交到 Git。
 
+定时任务建议使用 ModelScope 等免费或低成本模型池，避免把付费 DeepSeek 官方 API 放进自动调度。示例配置：
+
+```bash
+MODELSCOPE_BASE_URL=https://api-inference.modelscope.cn/v1
+MODELSCOPE_API_KEY=
+VALUE_ANALYSIS_MODELS=stepfun-ai/Step-3.7-Flash,moonshotai/Kimi-K2.7-Code:Moonshot
+VALUE_ANALYSIS_ALLOW_DEEPSEEK=0
+```
+
 ## 常用命令
 
 ```bash
@@ -94,6 +104,8 @@ python run.py
 ```
 
 默认访问 `http://localhost:8503`。
+
+网页中可进入“指数基金研究”，按推荐数量、候选数、最低成交额和历史起始日运行研究；勾选“完成后发送邮件”后，会使用根目录 `.env` 中的 SMTP 配置发送总分总报告。
 
 ## 每日分析流程
 

@@ -23,6 +23,7 @@ from frontend.strategies.sector_strategy_ui import display_sector_strategy
 from frontend.strategies.longhubang_ui import display_longhubang
 from frontend.strategies.smart_monitor_ui import smart_monitor_ui
 from frontend.strategies.daily_value_ui import display_daily_value_strategy
+from frontend.strategies.index_fund_research_ui import display_index_fund_research
 
 # ============================================================
 # 功能模块配置开关 - 用于灵活控制各功能的显示/隐藏
@@ -32,6 +33,7 @@ FEATURE_CONFIG = {
     # ==================== 选股板块 ====================
     "main_force": True,      # 主力选股 - 基于主力资金流向的选股策略
     "daily_value": True,     # 每日价值策略 - 全市场价值扫描、调度和交付
+    "index_fund_research": True,  # 指数基金研究 - 指数ETF回撤、长牛方向和邮件报告
     "low_price_bull": True,     # 低价擒牛 - 低价高成长股票筛选策略
     "small_cap": True,         # 小市值策略 - 小盘高成长股票筛选策略
     "profit_growth": True,   # 净利增长 - 净利润增长稳健股票筛选策略
@@ -341,7 +343,8 @@ def main():
             # 清除所有功能页面标志
             for key in ['show_history', 'show_monitor', 'show_config', 'show_main_force',
                        'show_sector_strategy', 'show_longhubang', 'show_portfolio', 'show_low_price_bull',
-                       'show_daily_value']:
+                       'show_daily_value', 'show_small_cap', 'show_profit_growth', 'show_smart_monitor',
+                       'show_index_fund_research']:
                 if key in st.session_state:
                     del st.session_state[key]
 
@@ -355,7 +358,16 @@ def main():
                 st.session_state.show_daily_value = True
                 for key in ['show_history', 'show_monitor', 'show_config', 'show_main_force',
                            'show_sector_strategy', 'show_longhubang', 'show_portfolio', 'show_low_price_bull',
-                           'show_small_cap', 'show_profit_growth', 'show_smart_monitor']:
+                           'show_small_cap', 'show_profit_growth', 'show_smart_monitor',
+                           'show_index_fund_research']:
+                    if key in st.session_state:
+                        del st.session_state[key]
+
+            if FEATURE_CONFIG["index_fund_research"] and st.button("指数基金研究", width='stretch', key="nav_index_fund_research", help="筛选腰斩回撤指数ETF，生成总分总研究报告并支持邮件发送"):
+                st.session_state.show_index_fund_research = True
+                for key in ['show_history', 'show_monitor', 'show_config', 'show_main_force',
+                           'show_sector_strategy', 'show_longhubang', 'show_portfolio', 'show_low_price_bull',
+                           'show_small_cap', 'show_profit_growth', 'show_smart_monitor', 'show_daily_value']:
                     if key in st.session_state:
                         del st.session_state[key]
 
@@ -364,7 +376,8 @@ def main():
                 st.session_state.show_main_force = True
                 for key in ['show_history', 'show_monitor', 'show_config', 'show_sector_strategy',
                            'show_longhubang', 'show_portfolio', 'show_low_price_bull',
-                           'show_small_cap', 'show_profit_growth', 'show_smart_monitor']:
+                           'show_small_cap', 'show_profit_growth', 'show_smart_monitor',
+                           'show_index_fund_research']:
                     if key in st.session_state:
                         del st.session_state[key]
             
@@ -372,7 +385,8 @@ def main():
             if FEATURE_CONFIG["low_price_bull"] and st.button("🐂 低价擒牛", width='stretch', key="nav_low_price_bull", help="低价高成长股票筛选策略"):
                 st.session_state.show_low_price_bull = True
                 for key in ['show_history', 'show_monitor', 'show_config', 'show_sector_strategy',
-                           'show_longhubang', 'show_portfolio', 'show_main_force', 'show_small_cap', 'show_profit_growth']:
+                           'show_longhubang', 'show_portfolio', 'show_main_force', 'show_small_cap',
+                           'show_profit_growth', 'show_index_fund_research']:
                     if key in st.session_state:
                         del st.session_state[key]
             
@@ -380,7 +394,8 @@ def main():
             if FEATURE_CONFIG["small_cap"] and st.button("📊 小市值策略", width='stretch', key="nav_small_cap", help="小盘高成长股票筛选策略"):
                 st.session_state.show_small_cap = True
                 for key in ['show_history', 'show_monitor', 'show_config', 'show_sector_strategy',
-                           'show_longhubang', 'show_portfolio', 'show_main_force', 'show_low_price_bull', 'show_profit_growth']:
+                           'show_longhubang', 'show_portfolio', 'show_main_force', 'show_low_price_bull',
+                           'show_profit_growth', 'show_index_fund_research']:
                     if key in st.session_state:
                         del st.session_state[key]
             
@@ -388,7 +403,8 @@ def main():
             if FEATURE_CONFIG["profit_growth"] and st.button("📈 净利增长", width='stretch', key="nav_profit_growth", help="净利润增长稳健股票筛选策略"):
                 st.session_state.show_profit_growth = True
                 for key in ['show_history', 'show_monitor', 'show_config', 'show_sector_strategy',
-                           'show_longhubang', 'show_portfolio', 'show_main_force', 'show_low_price_bull', 'show_small_cap']:
+                           'show_longhubang', 'show_portfolio', 'show_main_force', 'show_low_price_bull',
+                           'show_small_cap', 'show_index_fund_research']:
                     if key in st.session_state:
                         del st.session_state[key]
 
@@ -401,7 +417,7 @@ def main():
                 st.session_state.show_sector_strategy = True
                 for key in ['show_history', 'show_monitor', 'show_config', 'show_main_force',
                            'show_longhubang', 'show_portfolio', 'show_smart_monitor', 'show_low_price_bull',
-                           'show_small_cap', 'show_profit_growth']:
+                           'show_small_cap', 'show_profit_growth', 'show_index_fund_research']:
                     if key in st.session_state:
                         del st.session_state[key]
 
@@ -410,7 +426,7 @@ def main():
                 st.session_state.show_longhubang = True
                 for key in ['show_history', 'show_monitor', 'show_config', 'show_main_force',
                            'show_sector_strategy', 'show_portfolio', 'show_smart_monitor', 'show_low_price_bull',
-                           'show_small_cap', 'show_profit_growth']:
+                           'show_small_cap', 'show_profit_growth', 'show_index_fund_research']:
                     if key in st.session_state:
                         del st.session_state[key]
 
@@ -423,7 +439,7 @@ def main():
                 st.session_state.show_portfolio = True
                 for key in ['show_history', 'show_monitor', 'show_config', 'show_main_force',
                            'show_sector_strategy', 'show_longhubang', 'show_smart_monitor', 'show_low_price_bull',
-                           'show_small_cap', 'show_profit_growth']:
+                           'show_small_cap', 'show_profit_growth', 'show_index_fund_research']:
                     if key in st.session_state:
                         del st.session_state[key]
 
@@ -432,7 +448,7 @@ def main():
                 st.session_state.show_smart_monitor = True
                 for key in ['show_history', 'show_monitor', 'show_config', 'show_main_force',
                            'show_sector_strategy', 'show_longhubang', 'show_portfolio', 'show_low_price_bull',
-                           'show_small_cap', 'show_profit_growth']:
+                           'show_small_cap', 'show_profit_growth', 'show_index_fund_research']:
                     if key in st.session_state:
                         del st.session_state[key]
 
@@ -441,7 +457,7 @@ def main():
                 st.session_state.show_monitor = True
                 for key in ['show_history', 'show_main_force', 'show_longhubang', 'show_portfolio',
                            'show_config', 'show_sector_strategy', 'show_smart_monitor', 'show_low_price_bull',
-                           'show_small_cap', 'show_profit_growth']:
+                           'show_small_cap', 'show_profit_growth', 'show_index_fund_research']:
                     if key in st.session_state:
                         del st.session_state[key]
 
@@ -453,7 +469,8 @@ def main():
             st.session_state.show_history = True
             for key in ['show_monitor', 'show_longhubang', 'show_portfolio', 'show_config',
                        'show_main_force', 'show_sector_strategy', 'show_low_price_bull',
-                       'show_small_cap', 'show_profit_growth', 'show_smart_monitor']:
+                       'show_small_cap', 'show_profit_growth', 'show_smart_monitor',
+                       'show_index_fund_research']:
                 if key in st.session_state:
                     del st.session_state[key]
 
@@ -463,7 +480,8 @@ def main():
             st.session_state.show_config = True
             for key in ['show_history', 'show_monitor', 'show_main_force', 'show_sector_strategy',
                        'show_longhubang', 'show_portfolio', 'show_low_price_bull',
-                       'show_small_cap', 'show_profit_growth', 'show_smart_monitor']:
+                       'show_small_cap', 'show_profit_growth', 'show_smart_monitor',
+                       'show_index_fund_research']:
                 if key in st.session_state:
                     del st.session_state[key]
 
@@ -602,6 +620,10 @@ def main():
 
     if FEATURE_CONFIG["daily_value"] and 'show_daily_value' in st.session_state and st.session_state.show_daily_value:
         display_daily_value_strategy()
+        return
+
+    if FEATURE_CONFIG["index_fund_research"] and 'show_index_fund_research' in st.session_state and st.session_state.show_index_fund_research:
+        display_index_fund_research()
         return
 
     # 主界面
