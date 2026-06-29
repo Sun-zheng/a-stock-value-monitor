@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 from math import log10
 from typing import Callable
 
@@ -21,7 +21,7 @@ CATEGORY_KEYWORDS = {
     "新能源/高端制造": ("新能源", "电池", "光伏", "机器人", "高端制造", "军工"),
     "消费/品牌": ("消费", "食品", "酒", "家电", "旅游", "传媒"),
     "红利/宽基": ("红利", "沪深300", "中证500", "中证1000", "A500", "上证50", "创业板", "科创"),
-    "港股/海外": ("港股", "恒生", "纳指", "标普", "日经", "德国", "法国"),
+    "港股/海外": ("港股", "恒生", "中概", "纳指", "标普", "日经", "德国", "法国"),
 }
 
 LONG_BULL_CATEGORY_SCORE = {
@@ -34,6 +34,27 @@ LONG_BULL_CATEGORY_SCORE = {
     "港股/海外": 12,
     "其他": 10,
 }
+
+CATEGORY_THESIS = {
+    "半导体/芯片": "国产替代、AI算力和先进制造扩产仍是中长期主线，但行业估值和库存周期波动大。",
+    "人工智能/数字经济": "AI应用、云计算、数据要素和通信基础设施构成长期需求，适合在深回撤后跟踪趋势修复。",
+    "创新药/医疗": "老龄化、创新药出海和医疗需求韧性提供长期空间，但政策和研发兑现节奏会带来阶段波动。",
+    "新能源/高端制造": "电动化、储能、光伏和高端制造仍有产业基础，关键在产能出清和盈利拐点确认。",
+    "消费/品牌": "消费龙头具备现金流和品牌壁垒，长期修复依赖居民收入预期和渠道去库存。",
+    "红利/宽基": "宽基和红利指数分散度更高，适合作为组合底仓，长牛依赖盈利周期和分红稳定性。",
+    "港股/海外": "港股和海外指数估值弹性较大，受美元利率、流动性和平台经济政策预期影响明显。",
+    "其他": "缺少明确产业标签，需要更依赖回撤、流动性和趋势确认，不宜单独重仓。",
+}
+
+RESEARCH_WORKFLOW = [
+    "数据抓取: AkShare 东方财富 ETF 实时行情与前复权日线历史数据。",
+    "初筛过滤: 排除货币、债券、商品、现金管理和低成交额 ETF。",
+    "指数分类: 按基金名称识别半导体、AI、医疗、新能源、消费、宽基、港股海外等方向。",
+    "回撤建模: 计算历史高点、高点后低点、当前高点回撤、低点反弹和一年收益。",
+    "分析师复核: 回撤估值、产业长牛、趋势交易、风险控制四类规则分析师分别给观点。",
+    "预测输出: 估算预测最低点、回涨确认点和回到高点附近的时间区间。",
+    "组合选择: 优先选择接近目标回撤且类别分散的前 5 只，再用综合评分补足。",
+]
 
 
 def _num(value, default: float = 0.0) -> float:
@@ -67,6 +88,7 @@ class FundResearchConfig:
     min_turnover: float = 20_000_000
     target_drawdown_pct: float = -50.0
     min_drawdown_pct: float = -20.0
+    diversify_categories: bool = True
     start_date: str = "20180101"
 
 
@@ -113,7 +135,34 @@ class IndexFundResearchAnalyzer:
         )
         data = spot[mask].copy()
         data["分类"] = data["名称"].map(classify_fund)
-        return data.sort_values("成交额", ascending=False).head(config.history_candidates)
+        data = data.sort_values("成交额", ascending=False)
+        if not config.diversify_categories:
+            return data.head(config.history_candidates)
+        return self._diversify_universe(data, config.history_candidates)
+
+    @staticmethod
+    def _diversify_universe(data: pd.DataFrame, limit: int) -> pd.DataFrame:
+        if data.empty or limit <= 0:
+            return data.head(0)
+        groups = [
+            group
+            for _, group in data.groupby("分类", sort=False)
+            if not group.empty
+        ]
+        selected_indices = []
+        offset = 0
+        while len(selected_indices) < limit:
+            appended = False
+            for group in groups:
+                if offset < len(group):
+                    selected_indices.append(group.index[offset])
+                    appended = True
+                    if len(selected_indices) >= limit:
+                        break
+            if not appended:
+                break
+            offset += 1
+        return data.loc[selected_indices]
 
     def analyze(self, config: FundResearchConfig | None = None) -> dict:
         config = config or FundResearchConfig()
@@ -137,26 +186,50 @@ class IndexFundResearchAnalyzer:
             eligible = frame[frame["高点回撤"].le(config.min_drawdown_pct)]
             if eligible.empty:
                 eligible = frame
-            frame = frame.sort_values(
-                ["综合评分", "回撤贴合度", "成交额"],
-                ascending=[False, False, False],
-            )
             eligible = eligible.sort_values(
                 ["综合评分", "回撤贴合度", "成交额"],
                 ascending=[False, False, False],
             )
-            selected = eligible.head(config.top_n).to_dict("records")
+            selected = self._select_candidates(eligible, config)
         report = self.build_report(selected, config, errors)
         return {
             "success": bool(selected),
             "generated_at": datetime.now().isoformat(timespec="seconds"),
             "config": config.__dict__,
+            "workflow": RESEARCH_WORKFLOW,
             "universe_count": int(len(universe)),
             "analyzed_count": int(len(rows)),
             "errors": errors[:20],
             "candidates": selected,
             "report": report,
         }
+
+    @staticmethod
+    def _select_candidates(frame: pd.DataFrame, config: FundResearchConfig) -> list[dict]:
+        if frame.empty:
+            return []
+        if not config.diversify_categories:
+            return frame.head(config.top_n).to_dict("records")
+
+        selected_indices: list[int] = []
+        for _, group in frame.groupby("分类", sort=False):
+            selected_indices.append(int(group.index[0]))
+            if len(selected_indices) >= config.top_n:
+                break
+
+        if len(selected_indices) < config.top_n:
+            for index in frame.index:
+                index = int(index)
+                if index not in selected_indices:
+                    selected_indices.append(index)
+                if len(selected_indices) >= config.top_n:
+                    break
+
+        selected = frame.loc[selected_indices].sort_values(
+            ["综合评分", "回撤贴合度", "成交额"],
+            ascending=[False, False, False],
+        )
+        return selected.head(config.top_n).to_dict("records")
 
     def _analyze_one(self, fund: dict, history: pd.DataFrame, config: FundResearchConfig) -> dict | None:
         if history is None or history.empty or len(history) < 120:
@@ -232,6 +305,8 @@ class IndexFundResearchAnalyzer:
             "预测最低点": round(low_estimate, 4),
             "回涨确认点": round(rebound_trigger, 4),
             "预计修复周期": recovery_months,
+            "长牛逻辑": CATEGORY_THESIS.get(category, CATEGORY_THESIS["其他"]),
+            "风险边界": self._risk_boundary(current, low_estimate, rebound_trigger, annual_vol),
             "分析师观点": self._agent_views(
                 category, drawdown_pct, rebound_from_low_pct, annual_vol, current, ma60, ma120
             ),
@@ -273,6 +348,19 @@ class IndexFundResearchAnalyzer:
         return low_estimate, rebound_trigger, f"{months}-{months + 6}个月"
 
     @staticmethod
+    def _risk_boundary(current: float, low_estimate: float, rebound_trigger: float, annual_vol: float) -> str:
+        if annual_vol >= 35:
+            position_note = "高波动，只适合小仓分批观察"
+        elif annual_vol >= 22:
+            position_note = "中高波动，适合分批并等待确认"
+        else:
+            position_note = "波动相对可控，但仍需设置失效条件"
+        return (
+            f"{position_note}；若有效跌破预测最低点{low_estimate:.4f}，需要重新评估；"
+            f"若放量站上回涨确认点{rebound_trigger:.4f}，趋势修复可信度提高。"
+        )
+
+    @staticmethod
     def _agent_views(
         category: str,
         drawdown_pct: float,
@@ -312,14 +400,20 @@ class IndexFundResearchAnalyzer:
             "",
             f"- 目标：寻找接近历史高点回撤{abs(config.target_drawdown_pct):.0f}%、且具备长期产业逻辑的指数基金。",
             f"- 推荐数量：{len(candidates)}只。",
-            "- 方法：ETF流动性过滤 -> 历史高点回撤 -> 趋势/风险/长牛评分 -> 多分析师规则复核。",
+            "- 方法：ETF流动性过滤 -> 历史高点回撤 -> 趋势/风险/长牛评分 -> 多分析师规则复核 -> 类别分散选择。",
             "- 风险提示：指数基金仍有行业周期和估值杀跌风险，以下为研究观察，不构成投资建议。",
+            "",
+            "## 研究流程",
+            "",
+        ]
+        lines.extend(f"- {step}" for step in RESEARCH_WORKFLOW)
+        lines.extend([
             "",
             "## 推荐列表",
             "",
             "| 排名 | 代码 | 名称 | 分类 | 高点回撤 | 综合评分 | 预测最低点 | 回涨确认点 | 预计修复周期 |",
             "|---:|---|---|---|---:|---:|---:|---:|---|",
-        ]
+        ])
         for index, item in enumerate(candidates, start=1):
             lines.append(
                 f"| {index} | {item['代码']} | {item['名称']} | {item['分类']} | "
@@ -335,7 +429,9 @@ class IndexFundResearchAnalyzer:
                     f"- 历史高点：{item['历史高点']}（{item['高点日期']}），当前回撤：{item['高点回撤']}%。",
                     f"- 高点后最低：{item['高点后最低']}（{item['低点日期']}），低点反弹：{item['低点反弹']}%。",
                     f"- 长牛潜力：{item['长牛潜力']}；风险评分：{item['风险评分']}；成交额：{item['成交额']:.0f}。",
+                    f"- 长牛逻辑：{item['长牛逻辑']}",
                     f"- 预测最低点：{item['预测最低点']}；回涨确认点：{item['回涨确认点']}；预计修复周期：{item['预计修复周期']}。",
+                    f"- 风险边界：{item['风险边界']}",
                 ]
             )
             for agent, view in item["分析师观点"].items():

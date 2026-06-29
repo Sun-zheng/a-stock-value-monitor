@@ -62,6 +62,7 @@ def _display_candidates(candidates: list[dict]) -> None:
         "代码", "名称", "分类", "最新价", "历史高点", "高点回撤",
         "低点反弹", "近一年收益", "年化波动", "成交额",
         "综合评分", "预测最低点", "回涨确认点", "预计修复周期",
+        "长牛逻辑", "风险边界",
     ]
     display_columns = [column for column in columns if column in frame.columns]
     st.dataframe(frame[display_columns], width="stretch", hide_index=True)
@@ -80,7 +81,9 @@ def display_index_fund_research() -> None:
             history_candidates = st.number_input("历史候选数", min_value=10, max_value=200, value=80, step=10)
             min_turnover_wan = st.number_input("最低成交额(万元)", min_value=100, max_value=100000, value=2000, step=100)
         with col3:
+            min_drawdown = st.number_input("最低回撤(%)", min_value=-80.0, max_value=-5.0, value=-20.0, step=1.0)
             start_date = st.text_input("历史起始日", value="20180101", help="格式：YYYYMMDD")
+            diversify_categories = st.checkbox("优先分散行业/类型", value=True)
             send_email_checked = st.checkbox("完成后发送邮件", value=False)
         submitted = st.form_submit_button("开始指数基金研究", type="primary", width="stretch")
 
@@ -90,6 +93,8 @@ def display_index_fund_research() -> None:
             history_candidates=int(history_candidates),
             min_turnover=float(min_turnover_wan) * 10_000,
             target_drawdown_pct=float(target_drawdown),
+            min_drawdown_pct=float(min_drawdown),
+            diversify_categories=bool(diversify_categories),
             start_date=start_date.strip() or "20180101",
         )
         with st.spinner("正在拉取 ETF 行情、计算回撤和生成分析报告..."):
@@ -118,12 +123,15 @@ def display_index_fund_research() -> None:
     metrics[2].metric("推荐数量", len(result.get("candidates", [])))
     metrics[3].metric("生成时间", str(result.get("generated_at", "-"))[-8:])
 
-    tabs = st.tabs(["推荐结果", "完整报告", "数据说明"])
+    tabs = st.tabs(["推荐结果", "研究流程", "完整报告", "数据说明"])
     with tabs[0]:
         _display_candidates(result.get("candidates", []))
     with tabs[1]:
-        st.markdown(result.get("report", ""))
+        for step in result.get("workflow", []):
+            st.markdown(f"- {step}")
     with tabs[2]:
+        st.markdown(result.get("report", ""))
+    with tabs[3]:
         st.json(
             {
                 "config": result.get("config", {}),
