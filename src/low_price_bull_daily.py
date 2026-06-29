@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 
 from config.settings import settings
+from src.ai_value_analysis import append_ai_analysis, generate_ai_value_analysis
 from src.email_sender import send_email
 from src.stock_index_store import query_stock_history
 from src.trading_calendar import is_a_share_trading_day
@@ -69,10 +70,64 @@ def _to_number(value) -> float | None:
         return None
 
 
-def _fallback_from_value_index(project_root: Path, top_n: int) -> dict:
-    frame = query_stock_history(project_root / "data", "reviewed_candidates", limit=5000)
+def _normalized_code(value) -> str:
+    text = str(value or "").strip().upper()
+    return text.split(".")[0] if "." in text else text
+
+
+def _record_code(record: dict) -> str:
+    return str(_pick(record, "股票代码", "代码")).strip()
+
+
+def _record_name(record: dict) -> str:
+    return str(_pick(record, "股票简称", "名称")).strip()
+
+
+def _missing(value) -> bool:
+    return value in (None, "", "数据不足", "无", "N/A")
+
+
+def _load_value_index(project_root: Path) -> pd.DataFrame:
+    frame = query_stock_history(project_root / "data", "reviewed_candidates", limit=10000)
     if frame.empty:
-        frame = query_stock_history(project_root / "data", "all_stocks", limit=5000)
+        frame = query_stock_history(project_root / "data", "all_stocks", limit=10000)
+    return frame
+
+
+def _enrich_records_from_value_index(project_root: Path, records: list[dict]) -> list[dict]:
+    if not records:
+        return records
+    frame = _load_value_index(project_root)
+    if frame.empty or "代码" not in frame:
+        return records
+
+    indexed = frame.copy()
+    indexed["_normalized_code"] = indexed["代码"].map(_normalized_code)
+    by_code = indexed.drop_duplicates("_normalized_code").set_index("_normalized_code")
+    enriched: list[dict] = []
+    fill_pairs = [
+        ("所属行业", "行业"),
+        ("行业", "行业"),
+        ("上市板块", "上市板块"),
+        ("ROE", "ROE"),
+        ("综合评分", "综合评分"),
+        ("安全边际", "安全边际"),
+        ("营业收入增长率", "营业收入同比增长率"),
+    ]
+    for record in records:
+        item = dict(record)
+        code = _normalized_code(_record_code(item))
+        if code in by_code.index:
+            source = by_code.loc[code]
+            for target, source_field in fill_pairs:
+                if source_field in source and _missing(item.get(target)):
+                    item[target] = source[source_field]
+        enriched.append(item)
+    return enriched
+
+
+def _fallback_from_value_index(project_root: Path, top_n: int) -> dict:
+    frame = _load_value_index(project_root)
     if frame.empty:
         return {"success": False, "message": "问财失败，且本地价值索引为空", "rows": 0, "records": []}
     data = frame.copy()
@@ -123,8 +178,48 @@ def _fallback_from_value_index(project_root: Path, top_n: int) -> dict:
     return {"success": True, "message": message, "rows": len(records), "records": records}
 
 
-def build_low_price_bull_email(day: str, result: dict) -> str:
+def _low_price_bull_scan(result: dict) -> dict:
+    stocks = []
+    for index, record in enumerate(result.get("records", []), start=1):
+        stocks.append(
+            {
+                "股票类型": "低价擒牛观察",
+                "观察排名": index,
+                "代码": _record_code(record),
+                "名称": _record_name(record),
+                "行业": _pick(record, "所属行业", "行业"),
+                "上市板块": _pick(record, "上市板块"),
+                "当前价格": _pick(record, "股价", "最新价", "收盘价"),
+                "股价": _pick(record, "股价", "最新价", "收盘价"),
+                "净利润增长率": _pick(record, "净利润增长率", "净利润同比增长率", "归属母公司股东的净利润"),
+                "营业收入增长率": _pick(record, "营业收入增长率", "营业收入同比增长率"),
+                "成交额": _pick(record, "成交额"),
+                "ROE": _pick(record, "ROE"),
+                "综合评分": _pick(record, "综合评分"),
+                "安全边际": _pick(record, "安全边际"),
+                "下一步观察重点": "低价高成长短线观察池，需结合成交额、财报质量、风险警示与多分析师复核结果跟踪。",
+            }
+        )
+    return {
+        "观察股票": stocks,
+        "正式推荐股票": [],
+        "策略名称": "低价擒牛",
+        "最终推荐数量": 0,
+        "观察股票数量": len(stocks),
+    }
+
+
+def _generate_low_price_bull_ai_analysis(project_root: Path, day: str, result: dict) -> tuple[str, dict]:
+    if os.getenv("LOW_PRICE_BULL_AI_ANALYSIS", "1").strip().lower() in {"0", "false", "no", "off"}:
+        return "", {"success": False, "reason": "disabled"}
+    scan = _low_price_bull_scan(result)
+    return generate_ai_value_analysis(project_root, day, scan)
+
+
+def build_low_price_bull_email(day: str, result: dict, ai_markdown: str = "") -> str:
     records = result.get("records", [])
+    display_rows = len(records)
+    result_rows = result.get("rows", display_rows)
     if not records:
         table = "今日未筛选到符合条件的低价擒牛股票。"
     else:
@@ -142,7 +237,7 @@ def build_low_price_bull_email(day: str, result: dict) -> str:
                 )
             )
         table = "\n".join(lines)
-    return f"""# 低价擒牛工作日筛选报告 - {day}
+    markdown = f"""# 低价擒牛工作日筛选报告 - {day}
 
 ## 策略条件
 
@@ -158,7 +253,7 @@ def build_low_price_bull_email(day: str, result: dict) -> str:
 
 - 状态: {'成功' if result.get('success') else '失败'}
 - 说明: {result.get('message', '无')}
-- 数量: {result.get('rows', 0)}
+- 数量: {display_rows}
 
 {table}
 
@@ -166,6 +261,14 @@ def build_low_price_bull_email(day: str, result: dict) -> str:
 
 低价擒牛属于高波动策略，只作为短线观察池，不等同于价值策略正式推荐，不构成投资建议。
 """
+    if result_rows != display_rows:
+        markdown = markdown.replace(
+            f"- 数量: {display_rows}",
+            f"- 数量: {display_rows}\n- 原始返回数量: {result_rows}",
+        )
+    if ai_markdown:
+        markdown = append_ai_analysis(markdown, ai_markdown)
+    return markdown
 
 
 def run_low_price_bull_daily(project_root: Path | None = None, top_n: int | None = None, force: bool = False) -> dict:
@@ -182,13 +285,18 @@ def run_low_price_bull_daily(project_root: Path | None = None, top_n: int | None
         original_message = result.get("message", "")
         result = _fallback_from_value_index(project_root, top_n)
         result["upstream_error"] = original_message
+    if result.get("records"):
+        result["records"] = _enrich_records_from_value_index(project_root, result["records"])
+        result["rows"] = len(result["records"])
     output_dir = project_root / "reports" / "low_price_bull"
     output_dir.mkdir(parents=True, exist_ok=True)
     json_path = output_dir / f"{day}.json"
     md_path = output_dir / f"{day}.md"
     csv_path = output_dir / f"{day}.csv"
+    ai_markdown, ai_meta = _generate_low_price_bull_ai_analysis(project_root, day, result)
+    result["ai_analysis"] = ai_meta
     json_path.write_text(json.dumps(result, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
-    markdown = build_low_price_bull_email(day, result)
+    markdown = build_low_price_bull_email(day, result, ai_markdown)
     md_path.write_text(markdown, encoding="utf-8")
     if result.get("records"):
         pd.DataFrame(result["records"]).to_csv(csv_path, index=False, encoding="utf-8-sig")

@@ -12,6 +12,16 @@ def test_compact_stock_keeps_value_fields_only():
     assert "无关字段" not in compact
 
 
+def test_compact_stock_keeps_low_price_bull_context():
+    item = {"代码": "601368.SH", "股价": 4.19, "净利润增长率": 1064.8, "成交额": 15426002}
+
+    compact = _compact_stock(item)
+
+    assert compact["股价"] == 4.19
+    assert compact["净利润增长率"] == 1064.8
+    assert compact["成交额"] == 15426002
+
+
 def test_generate_uses_unified_batch_analysis(monkeypatch):
     calls = []
 

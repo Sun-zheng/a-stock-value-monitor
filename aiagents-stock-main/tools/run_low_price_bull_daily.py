@@ -20,6 +20,7 @@ def run(top_n: int) -> dict:
     success, frame, message = selector.get_low_price_stocks(top_n=fetch_n)
     if not success or frame is None:
         return {"success": False, "message": message, "rows": 0, "records": []}
+    original_rows = int(len(frame))
     if not frame.empty:
         name = frame.get("股票简称", "").astype(str)
         market_type = frame.get("股票市场类型", "").astype(str)
@@ -28,10 +29,15 @@ def run(top_n: int) -> dict:
             | market_type.str.contains("退市|风险警示", na=False)
         )
         frame = frame[~risky].head(top_n).copy()
+    final_rows = int(len(frame))
     return {
         "success": True,
-        "message": f"{message}；已二次过滤ST/退市/风险警示股票",
-        "rows": int(len(frame)),
+        "message": (
+            f"成功筛选出{final_rows}只低价高成长股票"
+            f"；原始候选{original_rows}只"
+            "；已二次过滤ST/退市/风险警示股票"
+        ),
+        "rows": final_rows,
         "columns": list(frame.columns),
         "records": frame.fillna("数据不足").to_dict("records"),
     }
