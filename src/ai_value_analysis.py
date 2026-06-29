@@ -21,13 +21,22 @@ def default_ai_env_file() -> Path:
 def configured_analysis_models() -> list[str]:
     raw = os.getenv(
         "VALUE_ANALYSIS_MODELS",
-        "deepseek-chat,deepseek-ai/deepseek-v3.1-terminus,stepfun-ai/Step-3.5-Flash",
+        "stepfun-ai/Step-3.5-Flash,Qwen/Qwen3-Next-80B-A3B-Instruct,moonshotai/Kimi-K2.5",
     )
+    allow_deepseek = os.getenv("VALUE_ANALYSIS_ALLOW_DEEPSEEK", "0").strip().lower() in {"1", "true", "yes", "on"}
     models: list[str] = []
     for model in (item.strip() for item in raw.split(",")):
+        if not allow_deepseek and "deepseek" in model.lower():
+            continue
         if model and model not in models:
             models.append(model)
     return models
+
+
+def ai_analysis_timeout(stock_count: int) -> int:
+    per_stock = int(os.getenv("VALUE_ANALYSIS_TIMEOUT_PER_STOCK_SECONDS", "240"))
+    minimum = int(os.getenv("VALUE_ANALYSIS_TIMEOUT_MIN_SECONDS", "900"))
+    return max(minimum, per_stock * max(stock_count, 1))
 
 
 def _run_ai_tool(project_root: Path, args: list[str], timeout: int = 180) -> subprocess.CompletedProcess:
@@ -195,6 +204,10 @@ def format_ai_analysis_markdown(result: dict, validation: dict) -> str:
 
 
 def generate_ai_value_analysis(project_root: Path, day: str, scan: dict) -> tuple[str, dict]:
+    if os.getenv("VALUE_ANALYSIS_ENABLED", "0").strip().lower() not in {"1", "true", "yes", "on"}:
+        validation = {"enabled_models": [], "status": "disabled", "reason": "VALUE_ANALYSIS_ENABLED is not enabled"}
+        markdown = format_ai_analysis_markdown({}, validation)
+        return markdown, {"validation": validation, "generation": {"success": False, "reason": "disabled"}}
     validation = validate_ai_models(project_root)
     stocks = analysis_stocks(scan)
     if not validation.get("enabled_models") or not stocks:
@@ -204,6 +217,7 @@ def generate_ai_value_analysis(project_root: Path, day: str, scan: dict) -> tupl
     with tempfile.TemporaryDirectory(prefix="value-ai-analysis.") as temporary:
         input_path = Path(temporary) / "input.json"
         output_path = Path(temporary) / "output.json"
+        generation: dict | None = None
         input_path.write_text(
             json.dumps(
                 {
@@ -218,24 +232,37 @@ def generate_ai_value_analysis(project_root: Path, day: str, scan: dict) -> tupl
             ),
             encoding="utf-8",
         )
-        result = _run_ai_tool(
-            project_root,
-            [
-                "tools/generate_value_stock_analysis.py",
-                "--input",
-                str(input_path),
-                "--output",
-                str(output_path),
-            ],
-            timeout=max(240, 90 * len(stocks)),
-        )
-        if result.returncode or not output_path.exists():
+        try:
+            result = _run_ai_tool(
+                project_root,
+                [
+                    "tools/generate_value_stock_analysis.py",
+                    "--input",
+                    str(input_path),
+                    "--output",
+                    str(output_path),
+                ],
+                timeout=ai_analysis_timeout(len(stocks)),
+            )
+        except subprocess.TimeoutExpired as exc:
             generation = {
                 "success": False,
-                "error": (result.stderr or result.stdout or "AI分析工具未返回结果")[-3000:],
+                "error": f"AI分析工具超时: {type(exc).__name__}: {exc}",
+                "timeout_seconds": exc.timeout,
             }
         else:
-            generation = json.loads(output_path.read_text(encoding="utf-8"))
+            if result.returncode or not output_path.exists():
+                generation = {
+                    "success": False,
+                    "error": (result.stderr or result.stdout or "AI分析工具未返回结果")[-3000:],
+                }
+            else:
+                generation = json.loads(output_path.read_text(encoding="utf-8"))
+        if generation is None:
+            generation = {
+                "success": False,
+                "error": "AI分析工具未返回结果",
+            }
     markdown = format_ai_analysis_markdown(generation, validation)
     return markdown, {"validation": validation, "generation": generation}
 

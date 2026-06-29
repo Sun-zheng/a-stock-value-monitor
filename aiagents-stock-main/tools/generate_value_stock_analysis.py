@@ -14,7 +14,7 @@ if str(ROOT) not in sys.path:
 
 
 VALUE_FIELDS = [
-    "股票类型", "观察排名", "代码", "名称", "行业", "上市板块", "当前价格",
+    "股票类型", "观察排名", "代码", "分析代码", "名称", "行业", "上市板块", "当前价格",
     "股价", "净利润增长率", "净利润同比增长率", "营业收入增长率", "成交额",
     "总市值", "流通市值", "PE TTM", "PB", "PS", "股息率",
     "ROE", "扣非ROE", "ROIC", "毛利率", "净利率", "资产负债率",
@@ -44,7 +44,8 @@ DEFAULT_ANALYSTS = {
 
 
 def _analysis_symbol(item: dict) -> str:
-    return str(item.get("代码") or item.get("symbol") or item.get("code") or "").strip()
+    symbol = str(item.get("分析代码") or item.get("代码") or item.get("symbol") or item.get("code") or "").strip()
+    return symbol.split(".")[0] if "." in symbol else symbol
 
 
 def _enabled_analysts(payload: dict) -> dict:
@@ -72,7 +73,7 @@ def generate(payload: dict) -> dict:
     day = payload["day"]
     scan = payload["scan"]
     stocks = payload.get("stocks", [])
-    models = payload.get("models") or ["deepseek-chat"]
+    models = payload.get("models") or ["stepfun-ai/Step-3.5-Flash"]
     os.environ["AI_MODEL_POOL"] = ",".join(models)
     selected_model = models[0]
     enabled_analysts = _enabled_analysts(payload)

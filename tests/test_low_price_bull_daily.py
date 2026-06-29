@@ -5,6 +5,7 @@ import pandas as pd
 from src.low_price_bull_daily import (
     _enrich_records_from_value_index,
     _fallback_from_value_index,
+    _generate_low_price_bull_ai_analysis,
     _low_price_bull_scan,
     build_low_price_bull_email,
 )
@@ -122,3 +123,53 @@ def test_low_price_bull_scan_maps_records_for_ai_analysis():
     assert stock["代码"] == "601368.SH"
     assert stock["净利润增长率"] == 1064.8
     assert stock["行业"] == "公用事业"
+
+
+def test_generate_low_price_bull_ai_analysis_uses_tool_analysis(monkeypatch, tmp_path: Path):
+    monkeypatch.setenv("LOW_PRICE_BULL_AI_ANALYSIS", "1")
+    monkeypatch.setattr(
+        "src.low_price_bull_daily.validate_ai_models",
+        lambda project_root: {"enabled_models": ["stepfun-ai/Step-3.5-Flash"], "status": "ok"},
+    )
+    result = {
+        "analysis": {
+            "success": True,
+            "period": "1y",
+            "analyses": [
+                {
+                    "stock_type": "低价擒牛观察",
+                    "code": "601368.SH",
+                    "name": "绿城水务",
+                    "success": True,
+                    "value_context": {"净利润增长率": 1064.8},
+                    "agents_results": {
+                        "technical": {
+                            "agent_name": "技术分析师",
+                            "agent_role": "技术面",
+                            "focus_areas": ["趋势"],
+                            "analysis": "技术分析内容",
+                        }
+                    },
+                    "discussion_result": "团队讨论内容",
+                    "final_decision": {"rating": "观察"},
+                }
+            ],
+        },
+        "ai_validation": {"enabled_models": ["stepfun-ai/Step-3.5-Flash"], "status": "ok"},
+    }
+
+    markdown, meta = _generate_low_price_bull_ai_analysis(tmp_path, "2026-06-29", result)
+
+    assert meta["source"] == "aiagents_low_price_bull_tool"
+    assert "技术分析内容" in markdown
+    assert "团队讨论内容" in markdown
+    assert "最终决策" in markdown
+
+
+def test_generate_low_price_bull_ai_analysis_disabled_by_default(monkeypatch, tmp_path: Path):
+    monkeypatch.delenv("LOW_PRICE_BULL_AI_ANALYSIS", raising=False)
+
+    markdown, meta = _generate_low_price_bull_ai_analysis(tmp_path, "2026-06-29", {"analysis": {"success": True}})
+
+    assert markdown == ""
+    assert meta["reason"] == "disabled"

@@ -18,11 +18,9 @@ from interface.ai.provider_config import PROVIDERS, resolve_provider  # noqa: E4
 
 
 DEFAULT_TEST_MODELS = [
-    "deepseek-chat",
-    "qwen-plus",
-    "deepseek-ai/DeepSeek-R1",
-    "deepseek-ai/deepseek-v3.1-terminus",
     "stepfun-ai/Step-3.5-Flash",
+    "Qwen/Qwen3-Next-80B-A3B-Instruct",
+    "moonshotai/Kimi-K2.5",
 ]
 
 

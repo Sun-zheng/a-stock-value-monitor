@@ -11,7 +11,13 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 
 from config.settings import settings
-from src.ai_value_analysis import append_ai_analysis, generate_ai_value_analysis
+from src.ai_value_analysis import (
+    append_ai_analysis,
+    configured_analysis_models,
+    format_ai_analysis_markdown,
+    generate_ai_value_analysis,
+    validate_ai_models,
+)
 from src.email_sender import send_email
 from src.stock_index_store import query_stock_history
 from src.trading_calendar import is_a_share_trading_day
@@ -20,27 +26,30 @@ from src.trading_calendar import is_a_share_trading_day
 LOW_PRICE_BULL_TIME = "14:00"
 
 
-def _run_selector(project_root: Path, top_n: int) -> dict:
+def _run_selector(project_root: Path, top_n: int, analysis_models: list[str] | None = None) -> dict:
     ai_root = project_root / "aiagents-stock-main"
     python = ai_root / ".venv/bin/python"
+    command = [
+        str(python),
+        "tools/run_low_price_bull_daily.py",
+        "--top-n",
+        str(top_n),
+        "--output",
+    ]
     with tempfile.TemporaryDirectory(prefix="low-price-bull.") as temporary:
         output_path = Path(temporary) / "result.json"
+        command.append(str(output_path))
+        if analysis_models:
+            command.extend(["--with-analysis", "--models", ",".join(analysis_models)])
         result = subprocess.run(
-            [
-                str(python),
-                "tools/run_low_price_bull_daily.py",
-                "--top-n",
-                str(top_n),
-                "--output",
-                str(output_path),
-            ],
+            command,
             cwd=ai_root,
             env={**os.environ, "AIAGENTS_ENV_FILE": str(Path.home() / ".config" / "a-stock-value-monitor" / "aiagents.env")},
             capture_output=True,
             text=True,
             encoding="utf-8",
             errors="replace",
-            timeout=600,
+            timeout=int(os.getenv("LOW_PRICE_BULL_TOOL_TIMEOUT_SECONDS", "1800" if analysis_models else "600")),
             check=False,
         )
         if result.returncode or not output_path.exists():
@@ -210,10 +219,19 @@ def _low_price_bull_scan(result: dict) -> dict:
 
 
 def _generate_low_price_bull_ai_analysis(project_root: Path, day: str, result: dict) -> tuple[str, dict]:
-    if os.getenv("LOW_PRICE_BULL_AI_ANALYSIS", "1").strip().lower() in {"0", "false", "no", "off"}:
+    if os.getenv("LOW_PRICE_BULL_AI_ANALYSIS", "0").strip().lower() not in {"1", "true", "yes", "on"}:
         return "", {"success": False, "reason": "disabled"}
+    validation = result.get("ai_validation") or validate_ai_models(project_root)
+    if result.get("analysis"):
+        markdown = format_ai_analysis_markdown(result["analysis"], validation)
+        return markdown, {"validation": validation, "generation": result["analysis"], "source": "aiagents_low_price_bull_tool"}
+    if not validation.get("enabled_models"):
+        markdown = format_ai_analysis_markdown({}, validation)
+        return markdown, {"validation": validation, "generation": {"success": False, "reason": "disabled_or_no_models"}}
     scan = _low_price_bull_scan(result)
-    return generate_ai_value_analysis(project_root, day, scan)
+    markdown, meta = generate_ai_value_analysis(project_root, day, scan)
+    meta["source"] = "root_fallback_for_local_value_index"
+    return markdown, meta
 
 
 def build_low_price_bull_email(day: str, result: dict, ai_markdown: str = "") -> str:
@@ -280,11 +298,14 @@ def run_low_price_bull_daily(project_root: Path | None = None, top_n: int | None
     if not trading and not force:
         return {"success": True, "skipped": True, "reason": f"{day} 不是A股交易日", "calendar_source": source}
 
-    result = _run_selector(project_root, top_n)
+    analysis_enabled = os.getenv("LOW_PRICE_BULL_AI_ANALYSIS", "0").strip().lower() in {"1", "true", "yes", "on"}
+    ai_validation = validate_ai_models(project_root, configured_analysis_models()) if analysis_enabled else {"enabled_models": []}
+    result = _run_selector(project_root, top_n, ai_validation.get("enabled_models") if analysis_enabled else None)
     if not result.get("success"):
         original_message = result.get("message", "")
         result = _fallback_from_value_index(project_root, top_n)
         result["upstream_error"] = original_message
+    result["ai_validation"] = ai_validation
     if result.get("records"):
         result["records"] = _enrich_records_from_value_index(project_root, result["records"])
         result["rows"] = len(result["records"])

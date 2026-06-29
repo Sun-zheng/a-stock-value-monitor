@@ -47,7 +47,7 @@ def test_generate_uses_unified_batch_analysis(monkeypatch):
         {
             "day": "2026-06-26",
             "scan": {},
-            "models": ["deepseek-chat"],
+            "models": ["stepfun-ai/Step-3.5-Flash"],
             "stocks": [{"代码": "000001", "名称": "测试股份", "股票类型": "观察股票"}],
         }
     )
@@ -57,3 +57,24 @@ def test_generate_uses_unified_batch_analysis(monkeypatch):
     assert calls[0]["period"] == "1y"
     assert all(calls[0]["enabled_analysts_config"].values())
     assert result["analyses"][0]["agents_results"]["technical"]["analysis"] == "技术报告"
+
+
+def test_generate_strips_exchange_suffix_for_batch_analysis(monkeypatch):
+    calls = []
+
+    def fake_analyze(**kwargs):
+        calls.append(kwargs)
+        return {"success": False, "error": "stop"}
+
+    monkeypatch.setattr(tool, "_analyze_single_stock_for_batch", fake_analyze)
+
+    tool.generate(
+        {
+            "day": "2026-06-29",
+            "scan": {},
+            "models": ["stepfun-ai/Step-3.5-Flash"],
+            "stocks": [{"代码": "601368.SH", "名称": "绿城水务", "股票类型": "低价擒牛观察"}],
+        }
+    )
+
+    assert calls[0]["symbol"] == "601368"

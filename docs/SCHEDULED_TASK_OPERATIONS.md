@@ -41,6 +41,35 @@ ScheduledCommand(
 - The main pipeline uses `RuntimeState.single_instance()` to prevent overlapping runs.
 - Stale `pipeline.lock` files are recovered after `PIPELINE_LOCK_STALE_MINUTES` minutes, default `240`.
 - Delivery uses content hashes and reservation records to prevent duplicate sends.
+- Scheduled jobs do not run large-model stock analysis by default. This avoids paid API usage and long-running delivery failures.
+
+## AI Cost Controls
+
+Default scheduled behavior:
+
+- `VALUE_ANALYSIS_ENABLED=0`: final delivery does not call stock-analysis agents unless explicitly enabled.
+- `LOW_PRICE_BULL_AI_ANALYSIS=0`: low-price bull delivery only screens and emails results unless explicitly enabled.
+- `VALUE_ANALYSIS_ALLOW_DEEPSEEK=0`: any model name containing `deepseek` is filtered out of scheduled model validation.
+- Default validation models are ModelScope-compatible free/test models: `stepfun-ai/Step-3.5-Flash`, `Qwen/Qwen3-Next-80B-A3B-Instruct`, `moonshotai/Kimi-K2.5`.
+
+To test the full agent chain with free/test models only:
+
+```bash
+VALUE_ANALYSIS_ENABLED=1 \
+VALUE_ANALYSIS_MODELS="stepfun-ai/Step-3.5-Flash,Qwen/Qwen3-Next-80B-A3B-Instruct" \
+python main.py --deliver-final-report
+
+LOW_PRICE_BULL_AI_ANALYSIS=1 \
+LOW_PRICE_BULL_TOP_N=1 \
+VALUE_ANALYSIS_MODELS="stepfun-ai/Step-3.5-Flash" \
+python main.py --run-low-price-bull
+```
+
+Only enable DeepSeek manually for an intentional paid run:
+
+```bash
+VALUE_ANALYSIS_ALLOW_DEEPSEEK=1 VALUE_ANALYSIS_MODELS="deepseek-chat" python main.py --deliver-final-report
+```
 
 ## Deployment
 
