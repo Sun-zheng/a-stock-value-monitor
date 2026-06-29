@@ -16,6 +16,7 @@ from src.ai_value_analysis import (
     configured_analysis_models,
     format_ai_analysis_markdown,
     generate_ai_value_analysis,
+    load_ai_runtime_env,
     validate_ai_models,
 )
 from src.email_sender import send_email
@@ -41,6 +42,9 @@ def _run_selector(project_root: Path, top_n: int, analysis_models: list[str] | N
         command.append(str(output_path))
         if analysis_models:
             command.extend(["--with-analysis", "--models", ",".join(analysis_models)])
+            analysis_limit = os.getenv("LOW_PRICE_BULL_ANALYSIS_LIMIT", "1").strip()
+            if analysis_limit:
+                command.extend(["--analysis-limit", analysis_limit])
         result = subprocess.run(
             command,
             cwd=ai_root,
@@ -290,6 +294,7 @@ def build_low_price_bull_email(day: str, result: dict, ai_markdown: str = "") ->
 
 
 def run_low_price_bull_daily(project_root: Path | None = None, top_n: int | None = None, force: bool = False) -> dict:
+    load_ai_runtime_env()
     project_root = project_root or settings.project_root
     top_n = top_n or int(os.getenv("LOW_PRICE_BULL_TOP_N", "5"))
     now = datetime.now(ZoneInfo(settings.timezone))

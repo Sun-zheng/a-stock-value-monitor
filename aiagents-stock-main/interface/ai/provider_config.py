@@ -91,7 +91,7 @@ PROVIDERS: dict[str, ProviderConfig] = {
         name="modelscope",
         base_url=os.getenv("MODELSCOPE_BASE_URL", "https://api-inference.modelscope.cn/v1"),
         api_key_env="MODELSCOPE_API_KEY",
-        default_model="stepfun-ai/Step-3.5-Flash",
+        default_model="stepfun-ai/Step-3.7-Flash",
         model_prefixes=("stepfun-ai/", "Shanghai_AI_Laboratory/"),
         model_names=(
             "deepseek-ai/DeepSeek-V3.2",
@@ -106,6 +106,7 @@ PROVIDERS: dict[str, ProviderConfig] = {
             "MiniMax/MiniMax-M2.7",
             "MiniMax/MiniMax-M3",
             "moonshotai/Kimi-K2.5",
+            "moonshotai/Kimi-K2.7-Code:Moonshot",
             "meituan-longcat/LongCat-Flash-Lite",
             "nex-agi/Nex-N2-Pro",
             "LLM-Research/Llama-4-Maverick-17B-128E-Instruct",
@@ -186,8 +187,11 @@ def available_model_options() -> dict[str, str]:
         "deepseek-ai/DeepSeek-V3.2": "DeepSeek V3.2 (ModelScope)",
         "deepseek-ai/DeepSeek-V4-Flash": "DeepSeek V4 Flash (ModelScope)",
         "deepseek-ai/DeepSeek-V4-Pro": "DeepSeek V4 Pro (ModelScope)",
+        "stepfun-ai/Step-3.7-Flash": "Step 3.7 Flash (ModelScope)",
         "Qwen/Qwen3.5-122B-A10B": "Qwen3.5 122B (ModelScope)",
         "Qwen/Qwen3-Next-80B-A3B-Instruct": "Qwen3 Next 80B Instruct (ModelScope)",
         "Qwen/Qwen3-Next-80B-A3B-Thinking": "Qwen3 Next 80B Thinking (ModelScope)",
         "moonshotai/Kimi-K2.5": "Kimi K2.5 (ModelScope)",
+        "moonshotai/Kimi-K2.7-Code:Moonshot": "Kimi K2.7 Code (ModelScope)",
+        "MiniMax/MiniMax-M3": "MiniMax M3 (ModelScope)",
     }

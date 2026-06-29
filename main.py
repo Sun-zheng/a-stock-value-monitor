@@ -397,6 +397,13 @@ def delivery_items(scan: dict) -> list[dict]:
     return items
 
 
+def email_report_excerpt(report: str, limit: int = 3500) -> str:
+    text = "\n".join(line.rstrip() for line in report.splitlines())
+    if len(text) <= limit:
+        return text
+    return text[:limit].rstrip() + "\n\n（邮件仅保留摘要，完整报告见本地最终报告路径。）"
+
+
 def build_delivery_email(
     day: str, scan: dict, report: str, lark_results: list[str]
 ) -> str:
@@ -412,7 +419,17 @@ def build_delivery_email(
     )
     return f"""# A股全市场 Buffett-Munger 十年价值策略执行邮件
 
-## 执行全过程
+## 总览结论
+
+- 日期: {day}
+- 结论: {'存在正式推荐候选' if formal else '今日无正式推荐，以下为观察池'}
+- 正式推荐: {', '.join(f"{x.get('名称')}({x.get('代码')})" for x in formal) or '无'}
+- 观察股票: {', '.join(f"{x.get('名称')}({x.get('代码')})" for x in observations) or '无'}
+- 无推荐原因: {scan.get('无推荐原因')}
+- 今日变化: {scan.get('每日变化', {}).get('explanation', '无')}
+- 邮件状态: 本邮件已生成并进入发送动作，收到本邮件即表示发送成功
+
+## 分析流程
 
 1. 确认 {day} 为A股交易日。
 2. 扫描推荐范围 {format_value(scan.get('推荐范围股票数量', scan['主板股票数量']), '推荐范围股票数量')} 只股票，范围为 {scan.get('推荐范围', '境内全市场A股')}。
@@ -424,7 +441,7 @@ def build_delivery_email(
 8. 正式推荐最多1只，观察最多5只且不以低分凑数。
 9. 每只正式推荐和观察股票分别写入飞书多维表格。
 
-## 本次结果
+## 数据摘要
 
 - 策略: {scan.get('策略名称')}
 - 分析口径: 全量前一交易日数据
@@ -438,13 +455,7 @@ def build_delivery_email(
 - 估值轻筛通过数量: {format_value(scan.get('估值轻筛通过数量'), '估值轻筛通过数量')}
 - 正式条件检查数量: {format_value(scan.get('正式条件检查数量'), '正式条件检查数量')}
 - 一票否决后数量: {format_value(scan.get('一票否决后数量'), '一票否决后数量')}
-- 正式推荐: {', '.join(f"{x.get('名称')}({x.get('代码')})" for x in formal) or '无'}
-- 观察股票: {', '.join(f"{x.get('名称')}({x.get('代码')})" for x in observations) or '无'}
-- 无推荐原因: {scan.get('无推荐原因')}
-- 今日变化: {scan.get('每日变化', {}).get('explanation', '无')}
 - 飞书写入: {'；'.join(lark_results) or '未执行'}
-- 邮件状态: 本邮件已生成并进入发送动作，收到本邮件即表示发送成功
-- 本地报告: {settings.reports_dir / f'{day}_report.md'}
 - 飞书表格: https://my.feishu.cn/base/BOZHbUgxIa2Ls6svZ3tcTvEFn5f
 
 ## 正式推荐股票分析
@@ -462,9 +473,9 @@ def build_delivery_email(
 - 最终报告: {settings.reports_dir / f'{day}_report.md'}
 - 历史记忆: {settings.project_root / 'data' / 'analysis_history' / f'{day}_analysis.json'}
 
-## 完整分析报告摘要
+## 总结摘要
 
-{report}
+{email_report_excerpt(report)}
 """
 
 

@@ -41,27 +41,29 @@ ScheduledCommand(
 - The main pipeline uses `RuntimeState.single_instance()` to prevent overlapping runs.
 - Stale `pipeline.lock` files are recovered after `PIPELINE_LOCK_STALE_MINUTES` minutes, default `240`.
 - Delivery uses content hashes and reservation records to prevent duplicate sends.
-- Scheduled jobs do not run large-model stock analysis by default. This avoids paid API usage and long-running delivery failures.
+- Scheduled jobs use the private local AI env file for analysis switches and model pools: `~/.config/a-stock-value-monitor/aiagents.env`.
 
 ## AI Cost Controls
 
 Default scheduled behavior:
 
-- `VALUE_ANALYSIS_ENABLED=0`: final delivery does not call stock-analysis agents unless explicitly enabled.
-- `LOW_PRICE_BULL_AI_ANALYSIS=0`: low-price bull delivery only screens and emails results unless explicitly enabled.
-- `VALUE_ANALYSIS_ALLOW_DEEPSEEK=0`: any model name containing `deepseek` is filtered out of scheduled model validation.
-- Default validation models are ModelScope-compatible free/test models: `stepfun-ai/Step-3.5-Flash`, `Qwen/Qwen3-Next-80B-A3B-Instruct`, `moonshotai/Kimi-K2.5`.
+- `VALUE_ANALYSIS_ALLOW_DEEPSEEK=0`: blocks the official DeepSeek provider models `deepseek-chat` and `deepseek-reasoner`.
+- ModelScope model ids such as `deepseek-ai/DeepSeek-V4-Pro` are allowed because they use `MODELSCOPE_API_KEY`, not the DeepSeek official key.
+- Scheduled email detail defaults to `VALUE_ANALYSIS_EMAIL_DETAIL=summary`, so mails include readable analyst summaries instead of full verbose transcripts.
+- Recommended scheduled model pool after validation on this machine: `stepfun-ai/Step-3.7-Flash`, `moonshotai/Kimi-K2.7-Code:Moonshot`.
+- `MiniMax/MiniMax-M3` and `deepseek-ai/DeepSeek-V4-Pro` are routed through ModelScope, but this account currently returned balance/quota errors during validation, so they are not in the default timer pool.
+- Runtime limits on this machine: `LOW_PRICE_BULL_TOP_N=5`, `LOW_PRICE_BULL_ANALYSIS_LIMIT=1`, `VALUE_ANALYSIS_MAX_STOCKS=3`.
 
-To test the full agent chain with free/test models only:
+To test the full agent chain with ModelScope models only:
 
 ```bash
 VALUE_ANALYSIS_ENABLED=1 \
-VALUE_ANALYSIS_MODELS="stepfun-ai/Step-3.5-Flash,Qwen/Qwen3-Next-80B-A3B-Instruct" \
+VALUE_ANALYSIS_MODELS="stepfun-ai/Step-3.7-Flash,moonshotai/Kimi-K2.7-Code:Moonshot" \
 python main.py --deliver-final-report
 
 LOW_PRICE_BULL_AI_ANALYSIS=1 \
 LOW_PRICE_BULL_TOP_N=1 \
-VALUE_ANALYSIS_MODELS="stepfun-ai/Step-3.5-Flash" \
+VALUE_ANALYSIS_MODELS="stepfun-ai/Step-3.7-Flash" \
 python main.py --run-low-price-bull
 ```
 

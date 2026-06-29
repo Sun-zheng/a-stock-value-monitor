@@ -76,15 +76,25 @@ def _analysis_payload(day: str, records: list[dict], models: list[str], period: 
     }
 
 
-def _analyze_records(day: str, records: list[dict], models: list[str], period: str) -> dict:
+def _analyze_records(day: str, records: list[dict], models: list[str], period: str, analysis_limit: int | None = None) -> dict:
     if not records:
         return {"success": False, "reason": "no_records", "analyses": []}
     if not models:
         return {"success": False, "reason": "no_models", "analyses": []}
-    return generate_stock_analysis(_analysis_payload(day, records, models, period))
+    selected_records = records[:analysis_limit] if analysis_limit else records
+    result = generate_stock_analysis(_analysis_payload(day, selected_records, models, period))
+    result["analysis_limit"] = analysis_limit or len(records)
+    result["screened_rows"] = len(records)
+    return result
 
 
-def run(top_n: int, with_analysis: bool = False, models: list[str] | None = None, period: str = "1y") -> dict:
+def run(
+    top_n: int,
+    with_analysis: bool = False,
+    models: list[str] | None = None,
+    period: str = "1y",
+    analysis_limit: int | None = None,
+) -> dict:
     selector = LowPriceBullSelector()
     fetch_n = max(top_n * 4, top_n)
     success, frame, message = selector.get_low_price_stocks(top_n=fetch_n)
@@ -118,8 +128,9 @@ def run(top_n: int, with_analysis: bool = False, models: list[str] | None = None
         result["analysis"] = _analyze_records(
             datetime.now().date().isoformat(),
             records,
-            models or ["stepfun-ai/Step-3.5-Flash"],
+            models or ["stepfun-ai/Step-3.7-Flash"],
             period,
+            analysis_limit=analysis_limit,
         )
         result["analysis_flow"] = "low_price_bull_selector -> frontend.app.analyze_single_stock_for_batch -> StockAnalysisAgents"
     return {
@@ -132,8 +143,9 @@ def main() -> int:
     parser.add_argument("--top-n", type=int, default=5)
     parser.add_argument("--output", required=True)
     parser.add_argument("--with-analysis", action="store_true")
-    parser.add_argument("--models", default="stepfun-ai/Step-3.5-Flash")
+    parser.add_argument("--models", default="stepfun-ai/Step-3.7-Flash")
     parser.add_argument("--period", default="1y")
+    parser.add_argument("--analysis-limit", type=int, default=None)
     args = parser.parse_args()
 
     load_dotenv(ROOT / ".env", override=False)
@@ -142,6 +154,7 @@ def main() -> int:
         with_analysis=args.with_analysis,
         models=[model.strip() for model in args.models.split(",") if model.strip()],
         period=args.period,
+        analysis_limit=args.analysis_limit,
     )
     Path(args.output).write_text(
         json.dumps(result, ensure_ascii=False, indent=2, default=str),

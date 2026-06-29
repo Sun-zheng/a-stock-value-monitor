@@ -3,6 +3,7 @@ import subprocess
 from src import ai_value_analysis
 from src.ai_value_analysis import (
     AI_SECTION_MARKER,
+    ai_analysis_max_stocks,
     ai_analysis_timeout,
     analysis_stocks,
     append_ai_analysis,
@@ -62,7 +63,7 @@ def test_format_ai_analysis_includes_multi_agent_outputs():
                 }
             ],
         },
-        {"enabled_models": ["stepfun-ai/Step-3.5-Flash"]},
+        {"enabled_models": ["stepfun-ai/Step-3.7-Flash"]},
     )
 
     assert "网页统一股票分析流程" in markdown
@@ -71,9 +72,50 @@ def test_format_ai_analysis_includes_multi_agent_outputs():
     assert "评级: 持有" in markdown
 
 
+def test_format_ai_analysis_defaults_to_readable_summary(monkeypatch):
+    monkeypatch.delenv("VALUE_ANALYSIS_EMAIL_DETAIL", raising=False)
+    long_text = "风险提示。" * 200
+
+    markdown = format_ai_analysis_markdown(
+        {
+            "success": True,
+            "period": "1y",
+            "analyses": [
+                {
+                    "success": True,
+                    "code": "000001",
+                    "name": "平安银行",
+                    "stock_type": "观察股票",
+                    "agents_results": {
+                        "technical": {
+                            "agent_name": "技术分析师",
+                            "agent_role": "技术分析",
+                            "analysis": long_text,
+                        }
+                    },
+                    "discussion_result": long_text,
+                    "final_decision": {"rating": "观察"},
+                }
+            ],
+        },
+        {"enabled_models": ["stepfun-ai/Step-3.7-Flash"]},
+    )
+
+    assert "#### 分析师摘要" in markdown
+    assert "#### 分析师报告" not in markdown
+    assert len(markdown) < len(long_text) * 2
+
+
 def test_ai_analysis_timeout_defaults_scale_by_stock_count():
     assert ai_analysis_timeout(1) >= 900
     assert ai_analysis_timeout(5) >= 1200
+
+
+def test_ai_analysis_max_stocks_defaults_to_three(monkeypatch, tmp_path):
+    monkeypatch.setenv("AIAGENTS_ENV_FILE", str(tmp_path / "missing.env"))
+    monkeypatch.delenv("VALUE_ANALYSIS_MAX_STOCKS", raising=False)
+
+    assert ai_analysis_max_stocks() == 3
 
 
 def test_generate_ai_value_analysis_returns_timeout_status(monkeypatch, tmp_path):
@@ -81,7 +123,7 @@ def test_generate_ai_value_analysis_returns_timeout_status(monkeypatch, tmp_path
     monkeypatch.setattr(
         ai_value_analysis,
         "validate_ai_models",
-        lambda project_root: {"enabled_models": ["stepfun-ai/Step-3.5-Flash"], "status": "ok"},
+        lambda project_root: {"enabled_models": ["stepfun-ai/Step-3.7-Flash"], "status": "ok"},
     )
 
     def raise_timeout(*args, **kwargs):
@@ -100,6 +142,7 @@ def test_generate_ai_value_analysis_returns_timeout_status(monkeypatch, tmp_path
 
 
 def test_generate_ai_value_analysis_disabled_by_default(monkeypatch, tmp_path):
+    monkeypatch.setenv("AIAGENTS_ENV_FILE", str(tmp_path / "missing.env"))
     monkeypatch.delenv("VALUE_ANALYSIS_ENABLED", raising=False)
 
     markdown, status = generate_ai_value_analysis(
@@ -113,17 +156,19 @@ def test_generate_ai_value_analysis_disabled_by_default(monkeypatch, tmp_path):
 
 
 def test_configured_analysis_models_filters_deepseek_by_default(monkeypatch):
+    monkeypatch.setenv("AIAGENTS_ENV_FILE", "/tmp/nonexistent-aiagents.env")
     monkeypatch.setenv(
         "VALUE_ANALYSIS_MODELS",
-        "deepseek-chat,stepfun-ai/Step-3.5-Flash,deepseek-ai/DeepSeek-V3.2",
+        "deepseek-chat,stepfun-ai/Step-3.7-Flash,deepseek-ai/DeepSeek-V4-Pro",
     )
     monkeypatch.delenv("VALUE_ANALYSIS_ALLOW_DEEPSEEK", raising=False)
 
-    assert configured_analysis_models() == ["stepfun-ai/Step-3.5-Flash"]
+    assert configured_analysis_models() == ["stepfun-ai/Step-3.7-Flash", "deepseek-ai/DeepSeek-V4-Pro"]
 
 
 def test_configured_analysis_models_can_allow_deepseek_manually(monkeypatch):
-    monkeypatch.setenv("VALUE_ANALYSIS_MODELS", "deepseek-chat,stepfun-ai/Step-3.5-Flash")
+    monkeypatch.setenv("AIAGENTS_ENV_FILE", "/tmp/nonexistent-aiagents.env")
+    monkeypatch.setenv("VALUE_ANALYSIS_MODELS", "deepseek-chat,stepfun-ai/Step-3.7-Flash")
     monkeypatch.setenv("VALUE_ANALYSIS_ALLOW_DEEPSEEK", "1")
 
-    assert configured_analysis_models() == ["deepseek-chat", "stepfun-ai/Step-3.5-Flash"]
+    assert configured_analysis_models() == ["deepseek-chat", "stepfun-ai/Step-3.7-Flash"]

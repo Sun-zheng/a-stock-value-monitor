@@ -73,7 +73,7 @@ def generate(payload: dict) -> dict:
     day = payload["day"]
     scan = payload["scan"]
     stocks = payload.get("stocks", [])
-    models = payload.get("models") or ["stepfun-ai/Step-3.5-Flash"]
+    models = payload.get("models") or ["stepfun-ai/Step-3.7-Flash"]
     os.environ["AI_MODEL_POOL"] = ",".join(models)
     selected_model = models[0]
     enabled_analysts = _enabled_analysts(payload)

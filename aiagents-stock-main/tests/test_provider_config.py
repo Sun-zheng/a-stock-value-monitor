@@ -10,10 +10,16 @@ def test_resolve_provider_for_nvidia_model():
 
 
 def test_resolve_provider_for_modelscope_model():
-    provider = resolve_provider("Shanghai_AI_Laboratory/Intern-S1-Pro")
+    provider = resolve_provider("deepseek-ai/DeepSeek-V4-Pro")
 
     assert provider.name == "modelscope"
     assert provider.api_key_env == "MODELSCOPE_API_KEY"
+
+
+def test_resolve_provider_for_new_modelscope_models():
+    assert resolve_provider("moonshotai/Kimi-K2.7-Code:Moonshot").name == "modelscope"
+    assert resolve_provider("stepfun-ai/Step-3.7-Flash").name == "modelscope"
+    assert resolve_provider("MiniMax/MiniMax-M3").name == "modelscope"
 
 
 def test_resolve_provider_defaults_to_deepseek():

@@ -47,7 +47,7 @@ def test_generate_uses_unified_batch_analysis(monkeypatch):
         {
             "day": "2026-06-26",
             "scan": {},
-            "models": ["stepfun-ai/Step-3.5-Flash"],
+            "models": ["stepfun-ai/Step-3.7-Flash"],
             "stocks": [{"代码": "000001", "名称": "测试股份", "股票类型": "观察股票"}],
         }
     )
@@ -72,7 +72,7 @@ def test_generate_strips_exchange_suffix_for_batch_analysis(monkeypatch):
         {
             "day": "2026-06-29",
             "scan": {},
-            "models": ["stepfun-ai/Step-3.5-Flash"],
+            "models": ["stepfun-ai/Step-3.7-Flash"],
             "stocks": [{"代码": "601368.SH", "名称": "绿城水务", "股票类型": "低价擒牛观察"}],
         }
     )

@@ -6,6 +6,8 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 
 AI_SECTION_MARKER = "<!-- AI_VALUE_STOCK_ANALYSIS -->"
 
@@ -18,15 +20,20 @@ def default_ai_env_file() -> Path:
     return Path.home() / ".config" / "a-stock-value-monitor" / "aiagents.env"
 
 
+def load_ai_runtime_env() -> None:
+    load_dotenv(os.getenv("AIAGENTS_ENV_FILE", str(default_ai_env_file())), override=False)
+
+
 def configured_analysis_models() -> list[str]:
+    load_ai_runtime_env()
     raw = os.getenv(
         "VALUE_ANALYSIS_MODELS",
-        "stepfun-ai/Step-3.5-Flash,Qwen/Qwen3-Next-80B-A3B-Instruct,moonshotai/Kimi-K2.5",
+        "stepfun-ai/Step-3.7-Flash,moonshotai/Kimi-K2.7-Code:Moonshot",
     )
     allow_deepseek = os.getenv("VALUE_ANALYSIS_ALLOW_DEEPSEEK", "0").strip().lower() in {"1", "true", "yes", "on"}
     models: list[str] = []
     for model in (item.strip() for item in raw.split(",")):
-        if not allow_deepseek and "deepseek" in model.lower():
+        if not allow_deepseek and model in {"deepseek-chat", "deepseek-reasoner"}:
             continue
         if model and model not in models:
             models.append(model)
@@ -37,6 +44,14 @@ def ai_analysis_timeout(stock_count: int) -> int:
     per_stock = int(os.getenv("VALUE_ANALYSIS_TIMEOUT_PER_STOCK_SECONDS", "240"))
     minimum = int(os.getenv("VALUE_ANALYSIS_TIMEOUT_MIN_SECONDS", "900"))
     return max(minimum, per_stock * max(stock_count, 1))
+
+
+def ai_analysis_max_stocks() -> int | None:
+    raw = os.getenv("VALUE_ANALYSIS_MAX_STOCKS", "3").strip()
+    if not raw:
+        return None
+    value = int(raw)
+    return value if value > 0 else None
 
 
 def _run_ai_tool(project_root: Path, args: list[str], timeout: int = 180) -> subprocess.CompletedProcess:
@@ -143,6 +158,27 @@ def _format_agent_reports(agents_results: dict) -> list[str]:
     return lines
 
 
+def _excerpt(value, limit: int = 280) -> str:
+    text = str(value or "暂无").replace("\r", "\n")
+    text = "\n".join(line.strip() for line in text.splitlines() if line.strip())
+    if len(text) <= limit:
+        return text
+    return text[:limit].rstrip() + "..."
+
+
+def _format_agent_summary(agents_results: dict) -> list[str]:
+    if not isinstance(agents_results, dict) or not agents_results:
+        return ["#### 分析师摘要", "", "- 未返回分析师报告。", ""]
+    lines = ["#### 分析师摘要", ""]
+    for agent_result in agents_results.values():
+        if not isinstance(agent_result, dict):
+            continue
+        agent_name = agent_result.get("agent_name", "未知分析师")
+        lines.append(f"- {agent_name}: {_excerpt(agent_result.get('analysis'))}")
+    lines.append("")
+    return lines
+
+
 def _format_stock_analysis(item: dict) -> list[str]:
     heading = f"### {item.get('stock_type', '股票')}：{item.get('name')}（{item.get('code')}）"
     if not item.get("success"):
@@ -164,8 +200,14 @@ def _format_stock_analysis(item: dict) -> list[str]:
         if value not in (None, ""):
             lines.append(f"- {key}: {value}")
     lines.append("")
-    lines.extend(_format_agent_reports(item.get("agents_results", {})))
-    lines.extend(["#### 团队讨论", "", str(item.get("discussion_result") or "暂无团队讨论。"), ""])
+    detail_mode = os.getenv("VALUE_ANALYSIS_EMAIL_DETAIL", "summary").strip().lower()
+    if detail_mode == "full":
+        lines.extend(_format_agent_reports(item.get("agents_results", {})))
+        discussion = str(item.get("discussion_result") or "暂无团队讨论。")
+    else:
+        lines.extend(_format_agent_summary(item.get("agents_results", {})))
+        discussion = _excerpt(item.get("discussion_result"), 420)
+    lines.extend(["#### 团队讨论", "", discussion, ""])
     lines.extend(["#### 最终决策", ""])
     lines.extend(_format_decision(item.get("final_decision", {})))
     lines.append("")
@@ -204,12 +246,16 @@ def format_ai_analysis_markdown(result: dict, validation: dict) -> str:
 
 
 def generate_ai_value_analysis(project_root: Path, day: str, scan: dict) -> tuple[str, dict]:
+    load_ai_runtime_env()
     if os.getenv("VALUE_ANALYSIS_ENABLED", "0").strip().lower() not in {"1", "true", "yes", "on"}:
         validation = {"enabled_models": [], "status": "disabled", "reason": "VALUE_ANALYSIS_ENABLED is not enabled"}
         markdown = format_ai_analysis_markdown({}, validation)
         return markdown, {"validation": validation, "generation": {"success": False, "reason": "disabled"}}
     validation = validate_ai_models(project_root)
     stocks = analysis_stocks(scan)
+    max_stocks = ai_analysis_max_stocks()
+    if max_stocks:
+        stocks = stocks[:max_stocks]
     if not validation.get("enabled_models") or not stocks:
         markdown = format_ai_analysis_markdown({}, validation)
         return markdown, {"validation": validation, "generation": {"success": False, "reason": "disabled_or_no_stocks"}}

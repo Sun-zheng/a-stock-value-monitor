@@ -18,9 +18,8 @@ from interface.ai.provider_config import PROVIDERS, resolve_provider  # noqa: E4
 
 
 DEFAULT_TEST_MODELS = [
-    "stepfun-ai/Step-3.5-Flash",
-    "Qwen/Qwen3-Next-80B-A3B-Instruct",
-    "moonshotai/Kimi-K2.5",
+    "stepfun-ai/Step-3.7-Flash",
+    "moonshotai/Kimi-K2.7-Code:Moonshot",
 ]
 
 
@@ -39,14 +38,29 @@ def _validate_model(model: str, prompt: str, timeout: int) -> dict:
         kwargs = {
             "model": model,
             "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0,
+            "temperature": 1 if model == "moonshotai/Kimi-K2.7-Code:Moonshot" else 0,
             "max_tokens": 24,
         }
         extra_body = provider.extra_body_by_model.get(model)
         if extra_body:
             kwargs["extra_body"] = extra_body
         response = client.chat.completions.create(**kwargs)
-        content = response.choices[0].message.content or ""
+        if getattr(response, "choices", None):
+            message = response.choices[0].message
+            content = (getattr(message, "reasoning_content", None) or "") + (message.content or "")
+        else:
+            chunks: list[str] = []
+            for chunk in client.chat.completions.create(**{**kwargs, "stream": True}):
+                if not getattr(chunk, "choices", None):
+                    continue
+                delta = chunk.choices[0].delta
+                reasoning = getattr(delta, "reasoning_content", None)
+                answer = getattr(delta, "content", None)
+                if reasoning:
+                    chunks.append(reasoning)
+                if answer:
+                    chunks.append(answer)
+            content = "".join(chunks)
         return {
             "model": model,
             "provider": provider.name,

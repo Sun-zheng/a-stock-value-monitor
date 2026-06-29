@@ -1,6 +1,7 @@
 import openai
 import json
 import hashlib
+import os
 import time
 from typing import Dict, List, Any, Optional
 from interface.ai.provider_config import configured_model_pool, resolve_provider
@@ -77,6 +78,22 @@ class DeepSeekClient:
                 "504",
             )
         )
+
+    def _stream_completion_text(self, client: openai.OpenAI, kwargs: dict) -> str:
+        stream_kwargs = {**kwargs, "stream": True}
+        chunks: list[str] = []
+        include_reasoning = os.getenv("AI_INCLUDE_REASONING", "0").strip().lower() in {"1", "true", "yes", "on"}
+        for chunk in client.chat.completions.create(**stream_kwargs):
+            if not getattr(chunk, "choices", None):
+                continue
+            delta = chunk.choices[0].delta
+            reasoning = getattr(delta, "reasoning_content", None)
+            content = getattr(delta, "content", None)
+            if include_reasoning and reasoning:
+                chunks.append(reasoning)
+            if content:
+                chunks.append(content)
+        return "".join(chunks).strip()
     
     def _clean_cache(self):
         """清理缓存，保持大小限制"""
@@ -98,6 +115,8 @@ class DeepSeekClient:
         
         # 对于 reasoner 模型，自动增加 max_tokens
         lower_model = model_to_use.lower()
+        if model_to_use == "moonshotai/Kimi-K2.7-Code:Moonshot":
+            temperature = 1
         if (
             "reasoner" in lower_model
             or "thinking" in lower_model
@@ -116,6 +135,7 @@ class DeepSeekClient:
         
         try:
             response = None
+            streamed_result: str | None = None
             for candidate in model_candidates:
                 model_to_use = candidate
                 provider = resolve_provider(model_to_use)
@@ -137,6 +157,10 @@ class DeepSeekClient:
                         if extra_body:
                             kwargs["extra_body"] = extra_body
                         response = client.chat.completions.create(**kwargs)
+                        if not getattr(response, "choices", None):
+                            streamed_result = self._stream_completion_text(client, kwargs)
+                            if not streamed_result:
+                                raise RuntimeError("API返回空流式响应")
                         self._record_health(model_to_use, provider.name, True)
                         break
                     except Exception as exc:
@@ -150,25 +174,29 @@ class DeepSeekClient:
                     break
             if response is None:
                 raise RuntimeError("；".join(errors[-5:]) or "所有模型均调用失败")
-            
-            # 处理 reasoner 模型的响应
-            message = response.choices[0].message
-            
-            # reasoner 模型可能包含 reasoning_content（推理过程）和 content（最终答案）
-            # 我们返回完整内容，包括推理过程（如果有的话）
-            result = ""
-            
-            # 检查是否有推理内容
-            reasoning_content = getattr(message, "reasoning_content", None)
-            if reasoning_content:
-                result += f"【推理过程】\n{reasoning_content}\n\n"
-            
-            # 添加最终内容
-            if message.content:
-                result += message.content
-            
-            result = result if result else "API返回空响应"
-            
+
+            if streamed_result is not None:
+                result = streamed_result
+            else:
+                # 处理 reasoner 模型的响应
+                message = response.choices[0].message
+                include_reasoning = os.getenv("AI_INCLUDE_REASONING", "0").strip().lower() in {"1", "true", "yes", "on"}
+
+                # reasoner 模型可能包含 reasoning_content（推理过程）和 content（最终答案）
+                # 我们返回完整内容，包括推理过程（如果有的话）
+                result = ""
+
+                # 检查是否有推理内容
+                reasoning_content = getattr(message, "reasoning_content", None)
+                if include_reasoning and reasoning_content:
+                    result += f"【推理过程】\n{reasoning_content}\n\n"
+
+                # 添加最终内容
+                if message.content:
+                    result += message.content
+
+                result = result if result else "API返回空响应"
+
             # 缓存结果
             self.cache[cache_key] = result
             self._clean_cache()  # 清理缓存
