@@ -58,6 +58,24 @@ def main() -> int:
             _assert_text(page, "选择功能", failures, "ETF toolkit run")
         page.screenshot(path=str(output_dir / "etf_toolkit.png"), full_page=True)
 
+        _click_visible_button(page, "单只ETF分析")
+        page.wait_for_function(
+            "() => document.body.innerText.includes('ETF主题') || document.body.innerText.includes('未获取到ETF快照')",
+            timeout=180_000,
+        )
+        for text in ("单只ETF分析", "最低成交额", "历史起始日"):
+            _assert_text(page, text, failures, "single ETF analysis")
+        if "未获取到ETF快照" not in page.locator("body").inner_text(timeout=10_000):
+            for text in ("ETF主题", "分析模块", "选择ETF"):
+                _assert_text(page, text, failures, "single ETF analysis")
+        page.screenshot(path=str(output_dir / "etf_single_analysis.png"), full_page=True)
+
+        _click_visible_button(page, "ETF历史记录")
+        page.wait_for_timeout(5_000)
+        for text in ("ETF历史记录", "data/etf_toolkit/history"):
+            _assert_text(page, text, failures, "ETF history")
+        page.screenshot(path=str(output_dir / "etf_history.png"), full_page=True)
+
         body = page.locator("body").inner_text(timeout=10_000)
         for token in ("Traceback", "ModuleNotFoundError", "ModuleNotFound"):
             if token in body:

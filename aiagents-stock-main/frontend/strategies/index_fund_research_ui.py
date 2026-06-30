@@ -16,6 +16,7 @@ from backend.strategies.index_fund_research.index_fund_analyzer import (
     FundResearchConfig,
     IndexFundResearchAnalyzer,
 )
+from backend.strategies.index_fund_research.etf_toolkit_store import ETFToolkitStore
 
 
 PROJECT_ROOT = Path(
@@ -151,6 +152,7 @@ def display_index_fund_research() -> None:
             result = IndexFundResearchAnalyzer().analyze(config)
             report_path = _save_report(result)
             result["report_path"] = str(report_path)
+            result.update(ETFToolkitStore(PROJECT_ROOT).save_history_result(result, module="指数基金研究"))
             st.session_state.index_fund_research_result = result
         if result.get("success"):
             st.success(f"研究完成，报告已保存：{report_path}")

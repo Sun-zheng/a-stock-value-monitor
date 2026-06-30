@@ -11,6 +11,7 @@ from backend.strategies.index_fund_research.major_market_etf_analyzer import (
     MajorMarketETFAnalyzer,
     MajorMarketETFConfig,
 )
+from backend.strategies.index_fund_research.etf_toolkit_store import ETFToolkitStore
 from frontend.strategies.index_fund_research_ui import (
     PROJECT_ROOT,
     _create_lark_doc,
@@ -57,6 +58,7 @@ def display_major_market_etf() -> None:
             result = MajorMarketETFAnalyzer().analyze_major_market(config)
             report_path = _save_major_report(result)
             result["report_path"] = str(report_path)
+            result.update(ETFToolkitStore(PROJECT_ROOT).save_history_result(result, module="大盘ETF指数分析"))
             st.session_state.major_market_etf_result = result
         st.success(f"分析完成，报告已保存：{report_path}") if result.get("success") else st.warning("分析完成，但暂无可展示结果。")
 
