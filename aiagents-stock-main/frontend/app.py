@@ -372,24 +372,6 @@ def main():
                     if key in st.session_state:
                         del st.session_state[key]
 
-            if FEATURE_CONFIG["index_fund_research"] and st.button("指数基金研究", width='stretch', key="nav_index_fund_research", help="筛选腰斩回撤指数ETF，生成总分总研究报告并支持邮件发送"):
-                st.session_state.show_index_fund_research = True
-                for key in ['show_history', 'show_monitor', 'show_config', 'show_main_force',
-                           'show_sector_strategy', 'show_longhubang', 'show_portfolio', 'show_low_price_bull',
-                           'show_small_cap', 'show_profit_growth', 'show_smart_monitor', 'show_daily_value',
-                           'show_major_market_etf']:
-                    if key in st.session_state:
-                        del st.session_state[key]
-
-            if FEATURE_CONFIG["major_market_etf"] and st.button("大盘ETF指数分析", width='stretch', key="nav_major_market_etf", help="分析沪深300、中证A500、上证50、创业板、恒生、纳指等主要宽基ETF"):
-                st.session_state.show_major_market_etf = True
-                for key in ['show_history', 'show_monitor', 'show_config', 'show_main_force',
-                           'show_sector_strategy', 'show_longhubang', 'show_portfolio', 'show_low_price_bull',
-                           'show_small_cap', 'show_profit_growth', 'show_smart_monitor', 'show_daily_value',
-                           'show_index_fund_research']:
-                    if key in st.session_state:
-                        del st.session_state[key]
-
             # ========== 主力选股功能（可通过FEATURE_CONFIG["main_force"]控制） ==========
             if FEATURE_CONFIG["main_force"] and st.button("💰 主力选股", width='stretch', key="nav_main_force", help="基于主力资金流向的选股策略"):
                 st.session_state.show_main_force = True
@@ -405,7 +387,7 @@ def main():
                 st.session_state.show_low_price_bull = True
                 for key in ['show_history', 'show_monitor', 'show_config', 'show_sector_strategy',
                            'show_longhubang', 'show_portfolio', 'show_main_force', 'show_small_cap',
-                           'show_profit_growth', 'show_index_fund_research']:
+                           'show_profit_growth', 'show_index_fund_research', 'show_major_market_etf']:
                     if key in st.session_state:
                         del st.session_state[key]
             
@@ -414,7 +396,7 @@ def main():
                 st.session_state.show_small_cap = True
                 for key in ['show_history', 'show_monitor', 'show_config', 'show_sector_strategy',
                            'show_longhubang', 'show_portfolio', 'show_main_force', 'show_low_price_bull',
-                           'show_profit_growth', 'show_index_fund_research']:
+                           'show_profit_growth', 'show_index_fund_research', 'show_major_market_etf']:
                     if key in st.session_state:
                         del st.session_state[key]
             
@@ -423,7 +405,29 @@ def main():
                 st.session_state.show_profit_growth = True
                 for key in ['show_history', 'show_monitor', 'show_config', 'show_sector_strategy',
                            'show_longhubang', 'show_portfolio', 'show_main_force', 'show_low_price_bull',
-                           'show_small_cap', 'show_index_fund_research']:
+                           'show_small_cap', 'show_index_fund_research', 'show_major_market_etf']:
+                    if key in st.session_state:
+                        del st.session_state[key]
+
+        # 📈 ETF板块
+        with st.expander("📈 ETF板块", expanded=True):
+            st.markdown("**指数基金和大盘ETF选择工具**")
+
+            if FEATURE_CONFIG["index_fund_research"] and st.button("指数基金研究", width='stretch', key="nav_index_fund_research", help="筛选腰斩回撤指数ETF，生成总分总研究报告并支持邮件发送"):
+                st.session_state.show_index_fund_research = True
+                for key in ['show_history', 'show_monitor', 'show_config', 'show_main_force',
+                           'show_sector_strategy', 'show_longhubang', 'show_portfolio', 'show_low_price_bull',
+                           'show_small_cap', 'show_profit_growth', 'show_smart_monitor', 'show_daily_value',
+                           'show_major_market_etf']:
+                    if key in st.session_state:
+                        del st.session_state[key]
+
+            if FEATURE_CONFIG["major_market_etf"] and st.button("大盘ETF指数分析", width='stretch', key="nav_major_market_etf", help="分析沪深300、中证A500、上证50、创业板、恒生、纳指等主要宽基ETF"):
+                st.session_state.show_major_market_etf = True
+                for key in ['show_history', 'show_monitor', 'show_config', 'show_main_force',
+                           'show_sector_strategy', 'show_longhubang', 'show_portfolio', 'show_low_price_bull',
+                           'show_small_cap', 'show_profit_growth', 'show_smart_monitor', 'show_daily_value',
+                           'show_index_fund_research']:
                     if key in st.session_state:
                         del st.session_state[key]
 
