@@ -8,6 +8,10 @@ from backend.strategies.index_fund_research.index_fund_analyzer import (
     classify_fund,
     is_equity_index_fund,
 )
+from backend.strategies.index_fund_research.major_market_etf_analyzer import (
+    MajorMarketETFAnalyzer,
+    MajorMarketETFConfig,
+)
 
 
 def _history(high: float, current: float, low: float, periods: int = 260) -> pd.DataFrame:
@@ -155,3 +159,30 @@ def test_analyze_diversifies_categories_before_filling_by_score() -> None:
     assert {"半导体/芯片", "人工智能/数字经济", "创新药/医疗"}.issubset(categories)
     assert result["workflow"][0].startswith("数据抓取")
     assert "半年上涨50%概率" in result["candidates"][0]
+
+
+def test_major_market_etf_analyzer_filters_broad_market_etfs() -> None:
+    spot = pd.DataFrame(
+        [
+            {"代码": "510300", "名称": "沪深300ETF", "最新价": 4.0, "涨跌幅": 0.5, "成交额": 300_000_000},
+            {"代码": "510050", "名称": "上证50ETF", "最新价": 3.0, "涨跌幅": 0.2, "成交额": 200_000_000},
+            {"代码": "512760", "名称": "半导体ETF", "最新价": 0.8, "涨跌幅": 1.0, "成交额": 500_000_000},
+        ]
+    )
+    histories = {
+        "510300": _history(5.0, 4.0, 3.4),
+        "510050": _history(4.0, 3.0, 2.6),
+    }
+    analyzer = MajorMarketETFAnalyzer(
+        spot_fetcher=lambda: spot,
+        history_fetcher=lambda code, start_date: histories[code],
+        market_fetcher=_market,
+    )
+
+    result = analyzer.analyze_major_market(MajorMarketETFConfig(top_n=2, history_candidates=3, min_turnover=1))
+
+    assert result["success"] is True
+    assert result["universe_count"] == 2
+    assert {item["代码"] for item in result["candidates"]} == {"510300", "510050"}
+    assert "主要市场大盘ETF指数分析报告" in result["report"]
+    assert "大盘配置评分" in result["candidates"][0]

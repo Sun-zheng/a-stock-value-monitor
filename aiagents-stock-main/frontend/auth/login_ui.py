@@ -168,7 +168,8 @@ class LoginUI:
         # 清除功能页面标志
         for key in ['show_history', 'show_monitor', 'show_config', 'show_main_force',
                    'show_sector_strategy', 'show_longhubang', 'show_portfolio', 'show_low_price_bull',
-                   'show_small_cap', 'show_profit_growth', 'show_smart_monitor']:
+                   'show_small_cap', 'show_profit_growth', 'show_smart_monitor',
+                   'show_index_fund_research', 'show_major_market_etf']:
             if key in st.session_state:
                 del st.session_state[key]
     

@@ -31,6 +31,7 @@ from frontend.strategies.longhubang_ui import display_longhubang
 from frontend.strategies.smart_monitor_ui import smart_monitor_ui
 from frontend.strategies.daily_value_ui import display_daily_value_strategy
 from frontend.strategies.index_fund_research_ui import display_index_fund_research
+from frontend.strategies.major_market_etf_ui import display_major_market_etf
 
 # ============================================================
 # 功能模块配置开关 - 用于灵活控制各功能的显示/隐藏
@@ -41,6 +42,7 @@ FEATURE_CONFIG = {
     "main_force": True,      # 主力选股 - 基于主力资金流向的选股策略
     "daily_value": True,     # 每日价值策略 - 全市场价值扫描、调度和交付
     "index_fund_research": True,  # 指数基金研究 - 指数ETF回撤、长牛方向和邮件报告
+    "major_market_etf": True,  # 大盘ETF指数分析 - 主要宽基ETF配置分析
     "low_price_bull": True,     # 低价擒牛 - 低价高成长股票筛选策略
     "small_cap": True,         # 小市值策略 - 小盘高成长股票筛选策略
     "profit_growth": True,   # 净利增长 - 净利润增长稳健股票筛选策略
@@ -351,7 +353,7 @@ def main():
             for key in ['show_history', 'show_monitor', 'show_config', 'show_main_force',
                        'show_sector_strategy', 'show_longhubang', 'show_portfolio', 'show_low_price_bull',
                        'show_daily_value', 'show_small_cap', 'show_profit_growth', 'show_smart_monitor',
-                       'show_index_fund_research']:
+                       'show_index_fund_research', 'show_major_market_etf']:
                 if key in st.session_state:
                     del st.session_state[key]
 
@@ -366,7 +368,7 @@ def main():
                 for key in ['show_history', 'show_monitor', 'show_config', 'show_main_force',
                            'show_sector_strategy', 'show_longhubang', 'show_portfolio', 'show_low_price_bull',
                            'show_small_cap', 'show_profit_growth', 'show_smart_monitor',
-                           'show_index_fund_research']:
+                           'show_index_fund_research', 'show_major_market_etf']:
                     if key in st.session_state:
                         del st.session_state[key]
 
@@ -374,7 +376,17 @@ def main():
                 st.session_state.show_index_fund_research = True
                 for key in ['show_history', 'show_monitor', 'show_config', 'show_main_force',
                            'show_sector_strategy', 'show_longhubang', 'show_portfolio', 'show_low_price_bull',
-                           'show_small_cap', 'show_profit_growth', 'show_smart_monitor', 'show_daily_value']:
+                           'show_small_cap', 'show_profit_growth', 'show_smart_monitor', 'show_daily_value',
+                           'show_major_market_etf']:
+                    if key in st.session_state:
+                        del st.session_state[key]
+
+            if FEATURE_CONFIG["major_market_etf"] and st.button("大盘ETF指数分析", width='stretch', key="nav_major_market_etf", help="分析沪深300、中证A500、上证50、创业板、恒生、纳指等主要宽基ETF"):
+                st.session_state.show_major_market_etf = True
+                for key in ['show_history', 'show_monitor', 'show_config', 'show_main_force',
+                           'show_sector_strategy', 'show_longhubang', 'show_portfolio', 'show_low_price_bull',
+                           'show_small_cap', 'show_profit_growth', 'show_smart_monitor', 'show_daily_value',
+                           'show_index_fund_research']:
                     if key in st.session_state:
                         del st.session_state[key]
 
@@ -384,7 +396,7 @@ def main():
                 for key in ['show_history', 'show_monitor', 'show_config', 'show_sector_strategy',
                            'show_longhubang', 'show_portfolio', 'show_low_price_bull',
                            'show_small_cap', 'show_profit_growth', 'show_smart_monitor',
-                           'show_index_fund_research']:
+                           'show_index_fund_research', 'show_major_market_etf']:
                     if key in st.session_state:
                         del st.session_state[key]
             
@@ -631,6 +643,10 @@ def main():
 
     if FEATURE_CONFIG["index_fund_research"] and 'show_index_fund_research' in st.session_state and st.session_state.show_index_fund_research:
         display_index_fund_research()
+        return
+
+    if FEATURE_CONFIG["major_market_etf"] and 'show_major_market_etf' in st.session_state and st.session_state.show_major_market_etf:
+        display_major_market_etf()
         return
 
     # 主界面
