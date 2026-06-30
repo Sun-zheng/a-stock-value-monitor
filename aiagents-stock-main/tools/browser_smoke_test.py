@@ -30,7 +30,7 @@ def main() -> int:
         page.on("console", lambda msg: console_errors.append(msg.text) if msg.type == "error" else None)
 
         page.goto(args.url, wait_until="domcontentloaded", timeout=60_000)
-        page.wait_for_timeout(12_000)
+        page.locator("input").first.wait_for(timeout=90_000)
         inputs = page.locator("input")
         inputs.nth(0).fill(args.username)
         inputs.nth(1).fill(args.password)
