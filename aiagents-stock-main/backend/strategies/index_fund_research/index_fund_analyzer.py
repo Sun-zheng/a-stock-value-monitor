@@ -48,11 +48,13 @@ CATEGORY_THESIS = {
 
 RESEARCH_WORKFLOW = [
     "数据抓取: AkShare 东方财富 ETF 实时行情与前复权日线历史数据。",
+    "全市场快照: 先保存可交易指数 ETF 参数，包括代码、名称、价格、成交额、市值、分类等。",
     "初筛过滤: 排除货币、债券、商品、现金管理和低成交额 ETF。",
+    "大盘环境: 抓取主要指数行情，判断市场风险偏好；数据源不可用时降级为 ETF 内部广度统计。",
     "指数分类: 按基金名称识别半导体、AI、医疗、新能源、消费、宽基、港股海外等方向。",
     "回撤建模: 计算历史高点、高点后低点、当前高点回撤、低点反弹和一年收益。",
-    "分析师复核: 回撤估值、产业长牛、趋势交易、风险控制四类规则分析师分别给观点。",
-    "预测输出: 估算预测最低点、回涨确认点和回到高点附近的时间区间。",
+    "分析师复核: 大盘策略、回撤估值、产业长牛、趋势交易、风险控制五类规则分析师分别给观点。",
+    "预测输出: 估算预测最低点、回涨确认点、半年上涨 50% 概率和回到高点附近的时间区间。",
     "组合选择: 优先选择接近目标回撤且类别分散的前 5 只，再用综合评分补足。",
 ]
 
@@ -64,6 +66,38 @@ def _num(value, default: float = 0.0) -> float:
         return float(str(value).replace(",", "").replace("%", ""))
     except (TypeError, ValueError):
         return default
+
+
+def _json_records(frame: pd.DataFrame) -> list[dict]:
+    if frame.empty:
+        return []
+    safe = frame.copy()
+    for column in safe.columns:
+        if pd.api.types.is_datetime64_any_dtype(safe[column]):
+            safe[column] = safe[column].dt.strftime("%Y-%m-%d %H:%M:%S")
+    safe = safe.where(pd.notnull(safe), None)
+    records = safe.to_dict("records")
+    for record in records:
+        for key, value in list(record.items()):
+            if isinstance(value, pd.Timestamp):
+                record[key] = value.isoformat()
+    return records
+
+
+def _json_safe(value):
+    if isinstance(value, dict):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_json_safe(item) for item in value)
+    if isinstance(value, pd.Timestamp):
+        return value.isoformat()
+    if pd.isna(value) if not isinstance(value, (list, tuple, dict, str, bytes)) else False:
+        return None
+    if value.__class__.__module__ == "numpy" and hasattr(value, "item"):
+        return value.item()
+    return value
 
 
 def classify_fund(name: str) -> str:
@@ -99,9 +133,11 @@ class IndexFundResearchAnalyzer:
         self,
         spot_fetcher: Callable[[], pd.DataFrame] | None = None,
         history_fetcher: Callable[[str, str], pd.DataFrame] | None = None,
+        market_fetcher: Callable[[], pd.DataFrame] | None = None,
     ):
         self.spot_fetcher = spot_fetcher or self._ak_spot
         self.history_fetcher = history_fetcher or self._ak_history
+        self.market_fetcher = market_fetcher or self._ak_market
 
     @staticmethod
     def _ak_spot() -> pd.DataFrame:
@@ -110,17 +146,61 @@ class IndexFundResearchAnalyzer:
         return ak.fund_etf_spot_em()
 
     @staticmethod
+    def _ak_market() -> pd.DataFrame:
+        import akshare as ak
+
+        frames = []
+        for symbol in ("上证系列指数", "深证系列指数"):
+            try:
+                frames.append(ak.stock_zh_index_spot_em(symbol=symbol))
+            except Exception:
+                continue
+        if not frames:
+            return pd.DataFrame()
+        return pd.concat(frames, ignore_index=True)
+
+    @staticmethod
     def _ak_history(code: str, start_date: str) -> pd.DataFrame:
         import akshare as ak
 
-        return ak.fund_etf_hist_em(
-            symbol=str(code).zfill(6),
-            period="daily",
-            start_date=start_date,
-            adjust="qfq",
-        )
+        code = str(code).zfill(6)
+        try:
+            return ak.fund_etf_hist_em(
+                symbol=code,
+                period="daily",
+                start_date=start_date,
+                adjust="qfq",
+            )
+        except Exception as em_error:
+            exchange = "sh" if code.startswith(("5", "6")) else "sz"
+            try:
+                frame = ak.fund_etf_hist_sina(symbol=f"{exchange}{code}")
+            except Exception as sina_error:
+                raise RuntimeError(
+                    f"Eastmoney failed: {type(em_error).__name__}: {em_error}; "
+                    f"Sina failed: {type(sina_error).__name__}: {sina_error}"
+                ) from sina_error
+            if frame.empty:
+                return frame
+            renamed = frame.rename(
+                columns={
+                    "date": "日期",
+                    "open": "开盘",
+                    "high": "最高",
+                    "low": "最低",
+                    "close": "收盘",
+                    "volume": "成交量",
+                    "amount": "成交额",
+                }
+            )
+            renamed["日期"] = pd.to_datetime(renamed["日期"])
+            start = pd.to_datetime(start_date)
+            renamed = renamed[renamed["日期"].ge(start)].copy()
+            renamed["涨跌幅"] = pd.to_numeric(renamed["收盘"], errors="coerce").pct_change() * 100
+            renamed["日期"] = renamed["日期"].dt.strftime("%Y-%m-%d")
+            return renamed
 
-    def fetch_universe(self, config: FundResearchConfig) -> pd.DataFrame:
+    def fetch_market_snapshot(self, config: FundResearchConfig) -> pd.DataFrame:
         spot = self.spot_fetcher().copy()
         if spot.empty:
             return spot
@@ -135,7 +215,21 @@ class IndexFundResearchAnalyzer:
         )
         data = spot[mask].copy()
         data["分类"] = data["名称"].map(classify_fund)
-        data = data.sort_values("成交额", ascending=False)
+        keep = [
+            column for column in [
+                "代码", "名称", "分类", "最新价", "涨跌幅", "成交额", "流通市值",
+                "总市值", "换手率", "数据日期", "更新时间",
+            ] if column in data.columns
+        ]
+        data = data[keep].sort_values("成交额", ascending=False)
+        return data
+
+    def fetch_universe(
+        self,
+        config: FundResearchConfig,
+        market_snapshot: pd.DataFrame | None = None,
+    ) -> pd.DataFrame:
+        data = (market_snapshot.copy() if market_snapshot is not None else self.fetch_market_snapshot(config))
         if not config.diversify_categories:
             return data.head(config.history_candidates)
         return self._diversify_universe(data, config.history_candidates)
@@ -166,7 +260,9 @@ class IndexFundResearchAnalyzer:
 
     def analyze(self, config: FundResearchConfig | None = None) -> dict:
         config = config or FundResearchConfig()
-        universe = self.fetch_universe(config)
+        market_snapshot = self.fetch_market_snapshot(config)
+        universe = self.fetch_universe(config, market_snapshot)
+        market_context = self._build_market_context(market_snapshot)
         rows: list[dict] = []
         errors: list[str] = []
         for _, fund in universe.iterrows():
@@ -191,18 +287,23 @@ class IndexFundResearchAnalyzer:
                 ascending=[False, False, False],
             )
             selected = self._select_candidates(eligible, config)
-        report = self.build_report(selected, config, errors)
-        return {
+        report = self.build_report(selected, config, errors, market_context)
+        return _json_safe({
             "success": bool(selected),
             "generated_at": datetime.now().isoformat(timespec="seconds"),
             "config": config.__dict__,
             "workflow": RESEARCH_WORKFLOW,
+            "market_context": market_context,
+            "market_snapshot_count": int(len(market_snapshot)),
+            "market_snapshot": _json_records(market_snapshot),
+            "category_distribution": market_snapshot["分类"].value_counts().to_dict() if "分类" in market_snapshot else {},
             "universe_count": int(len(universe)),
             "analyzed_count": int(len(rows)),
+            "error_count": len(errors),
             "errors": errors[:20],
             "candidates": selected,
             "report": report,
-        }
+        })
 
     @staticmethod
     def _select_candidates(frame: pd.DataFrame, config: FundResearchConfig) -> list[dict]:
@@ -306,11 +407,81 @@ class IndexFundResearchAnalyzer:
             "回涨确认点": round(rebound_trigger, 4),
             "预计修复周期": recovery_months,
             "长牛逻辑": CATEGORY_THESIS.get(category, CATEGORY_THESIS["其他"]),
+            "偏离原因": self._deviation_reason(category, drawdown_pct, one_year_return, current, ma60, ma120),
+            "半年上涨50%概率": self._half_year_rebound_probability(
+                drawdown_pct=drawdown_pct,
+                rebound_pct=rebound_from_low_pct,
+                trend_score=trend,
+                annual_vol=annual_vol,
+                risk_score=risk,
+                long_bull_score=long_bull,
+            ),
             "风险边界": self._risk_boundary(current, low_estimate, rebound_trigger, annual_vol),
             "分析师观点": self._agent_views(
                 category, drawdown_pct, rebound_from_low_pct, annual_vol, current, ma60, ma120
             ),
         }
+
+    def _build_market_context(self, market_snapshot: pd.DataFrame) -> dict:
+        index_rows: list[dict] = []
+        fetch_status = "主要指数接口未返回数据，使用ETF内部广度作为大盘代理"
+        try:
+            index_frame = self.market_fetcher().copy()
+            if not index_frame.empty:
+                name_field = "名称" if "名称" in index_frame.columns else index_frame.columns[0]
+                target_names = ("上证指数", "深证成指", "沪深300", "创业板指", "科创50", "中证500", "中证1000")
+                for _, row in index_frame.iterrows():
+                    name = str(row.get(name_field, ""))
+                    if not any(target in name for target in target_names):
+                        continue
+                    index_rows.append({
+                        "名称": name,
+                        "最新价": round(_num(row.get("最新价", row.get("点位", row.get("收盘")))), 2),
+                        "涨跌幅": round(_num(row.get("涨跌幅")), 2),
+                        "成交额": round(_num(row.get("成交额")), 2),
+                    })
+                if index_rows:
+                    fetch_status = "主要指数行情抓取成功"
+        except Exception as exc:
+            fetch_status = f"主要指数接口不可用: {type(exc).__name__}"
+
+        breadth = self._etf_breadth(market_snapshot)
+        return {
+            "status": fetch_status,
+            "indices": index_rows[:8],
+            "etf_breadth": breadth,
+            "summary": self._market_summary(index_rows, breadth),
+        }
+
+    @staticmethod
+    def _etf_breadth(market_snapshot: pd.DataFrame) -> dict:
+        if market_snapshot.empty:
+            return {"可交易指数ETF": 0, "上涨占比": None, "中位涨跌幅": None, "成交额合计": 0}
+        if "涨跌幅" in market_snapshot:
+            change = pd.to_numeric(market_snapshot["涨跌幅"], errors="coerce")
+        else:
+            change = pd.Series(dtype=float)
+        turnover = pd.to_numeric(market_snapshot.get("成交额", pd.Series(dtype=float)), errors="coerce").fillna(0)
+        valid = change.dropna()
+        return {
+            "可交易指数ETF": int(len(market_snapshot)),
+            "上涨占比": round(float((valid > 0).mean() * 100), 2) if not valid.empty else None,
+            "中位涨跌幅": round(float(valid.median()), 2) if not valid.empty else None,
+            "成交额合计": round(float(turnover.sum()), 2),
+        }
+
+    @staticmethod
+    def _market_summary(index_rows: list[dict], breadth: dict) -> str:
+        if index_rows:
+            avg_change = sum(_num(row.get("涨跌幅")) for row in index_rows) / len(index_rows)
+            tone = "偏强" if avg_change > 0.5 else "偏弱" if avg_change < -0.5 else "震荡"
+            return f"主要指数平均涨跌幅约{avg_change:.2f}%，市场状态偏{tone}；指数基金选择应兼顾回撤深度和趋势确认。"
+        up_ratio = breadth.get("上涨占比")
+        median_change = breadth.get("中位涨跌幅")
+        if up_ratio is None:
+            return "未获得有效大盘行情，报告主要依据ETF自身成交、回撤和趋势数据。"
+        tone = "风险偏好修复" if up_ratio >= 55 else "风险偏好偏弱" if up_ratio <= 40 else "结构性震荡"
+        return f"ETF内部广度显示上涨占比{up_ratio}%，中位涨跌幅{median_change}%，市场处于{tone}。"
 
     @staticmethod
     def _trend_score(current: float, ma20: float, ma60: float, ma120: float, rebound: float) -> float:
@@ -361,6 +532,58 @@ class IndexFundResearchAnalyzer:
         )
 
     @staticmethod
+    def _deviation_reason(
+        category: str,
+        drawdown_pct: float,
+        one_year_return: float,
+        current: float,
+        ma60: float,
+        ma120: float,
+    ) -> str:
+        reasons = []
+        if drawdown_pct <= -50:
+            reasons.append("历史高点以来估值和风险偏好双重压缩")
+        elif drawdown_pct <= -35:
+            reasons.append("相对历史高点处于明显折价区间")
+        if one_year_return < -10:
+            reasons.append("近一年仍处下行趋势，资金风险偏好未完全恢复")
+        if current < ma60 or ma60 < ma120:
+            reasons.append("均线结构尚未完全修复")
+        if category in ("创新药/医疗", "新能源/高端制造", "港股/海外"):
+            reasons.append("行业景气、政策预期或海外流动性变化放大了偏离")
+        return "；".join(reasons) or "主要偏离来自阶段性交易拥挤和估值回归。"
+
+    @staticmethod
+    def _half_year_rebound_probability(
+        drawdown_pct: float,
+        rebound_pct: float,
+        trend_score: float,
+        annual_vol: float,
+        risk_score: float,
+        long_bull_score: float,
+    ) -> str:
+        score = 20.0
+        score += min(25.0, max(0.0, abs(drawdown_pct) - 30) * 0.8)
+        score += min(20.0, rebound_pct * 0.5)
+        score += max(0.0, trend_score - 55) * 0.45
+        score += max(0.0, long_bull_score - 45) * 0.35
+        score += max(0.0, risk_score - 45) * 0.2
+        score -= max(0.0, annual_vol - 30) * 0.6
+        score = max(5.0, min(85.0, score))
+        if score >= 65:
+            level = "较高"
+        elif score >= 45:
+            level = "中等"
+        elif score >= 30:
+            level = "偏低"
+        else:
+            level = "较低"
+        return (
+            f"{level}（约{score:.0f}%）：半年涨50%需要市场风险偏好明显修复、"
+            "行业催化兑现，并站稳回涨确认点；未站稳前只能按反弹观察处理。"
+        )
+
+    @staticmethod
     def _agent_views(
         category: str,
         drawdown_pct: float,
@@ -389,8 +612,14 @@ class IndexFundResearchAnalyzer:
         }
 
     @staticmethod
-    def build_report(candidates: list[dict], config: FundResearchConfig, errors: list[str] | None = None) -> str:
+    def build_report(
+        candidates: list[dict],
+        config: FundResearchConfig,
+        errors: list[str] | None = None,
+        market_context: dict | None = None,
+    ) -> str:
         errors = errors or []
+        market_context = market_context or {}
         if not candidates:
             return "# 指数基金回撤研究报告\n\n今日未找到满足条件的指数基金候选。"
         lines = [
@@ -409,16 +638,36 @@ class IndexFundResearchAnalyzer:
         lines.extend(f"- {step}" for step in RESEARCH_WORKFLOW)
         lines.extend([
             "",
+            "## 大盘环境",
+            "",
+            f"- 数据状态：{market_context.get('status', '未获取')}",
+            f"- 综合判断：{market_context.get('summary', '暂无')}",
+        ])
+        breadth = market_context.get("etf_breadth") or {}
+        if breadth:
+            lines.append(
+                f"- ETF内部广度：可交易指数ETF {breadth.get('可交易指数ETF', 0)} 只，"
+                f"上涨占比 {breadth.get('上涨占比', 'N/A')}%，中位涨跌幅 {breadth.get('中位涨跌幅', 'N/A')}%。"
+            )
+        indices = market_context.get("indices") or []
+        if indices:
+            lines.extend(["", "| 指数 | 最新价 | 涨跌幅 | 成交额 |", "|---|---:|---:|---:|"])
+            for item in indices:
+                lines.append(
+                    f"| {item.get('名称')} | {item.get('最新价')} | {item.get('涨跌幅')}% | {item.get('成交额')} |"
+                )
+        lines.extend([
+            "",
             "## 推荐列表",
             "",
-            "| 排名 | 代码 | 名称 | 分类 | 高点回撤 | 综合评分 | 预测最低点 | 回涨确认点 | 预计修复周期 |",
-            "|---:|---|---|---|---:|---:|---:|---:|---|",
+            "| 排名 | 代码 | 名称 | 分类 | 高点回撤 | 综合评分 | 预测最低点 | 回涨确认点 | 半年涨50% | 预计修复周期 |",
+            "|---:|---|---|---|---:|---:|---:|---:|---|---|",
         ])
         for index, item in enumerate(candidates, start=1):
             lines.append(
                 f"| {index} | {item['代码']} | {item['名称']} | {item['分类']} | "
                 f"{item['高点回撤']}% | {item['综合评分']} | {item['预测最低点']} | "
-                f"{item['回涨确认点']} | {item['预计修复周期']} |"
+                f"{item['回涨确认点']} | {item['半年上涨50%概率']} | {item['预计修复周期']} |"
             )
         lines.extend(["", "## 分项分析", ""])
         for index, item in enumerate(candidates, start=1):
@@ -429,8 +678,10 @@ class IndexFundResearchAnalyzer:
                     f"- 历史高点：{item['历史高点']}（{item['高点日期']}），当前回撤：{item['高点回撤']}%。",
                     f"- 高点后最低：{item['高点后最低']}（{item['低点日期']}），低点反弹：{item['低点反弹']}%。",
                     f"- 长牛潜力：{item['长牛潜力']}；风险评分：{item['风险评分']}；成交额：{item['成交额']:.0f}。",
+                    f"- 偏离原因：{item['偏离原因']}",
                     f"- 长牛逻辑：{item['长牛逻辑']}",
                     f"- 预测最低点：{item['预测最低点']}；回涨确认点：{item['回涨确认点']}；预计修复周期：{item['预计修复周期']}。",
+                    f"- 半年上涨50%判断：{item['半年上涨50%概率']}",
                     f"- 风险边界：{item['风险边界']}",
                 ]
             )

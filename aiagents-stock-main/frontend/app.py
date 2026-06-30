@@ -1,3 +1,10 @@
+import sys
+from pathlib import Path
+
+AIAGENTS_ROOT = Path(__file__).resolve().parents[1]
+if str(AIAGENTS_ROOT) not in sys.path:
+    sys.path.insert(0, str(AIAGENTS_ROOT))
+
 import streamlit as st
 import plotly.graph_objects as go
 import plotly.express as px

@@ -38,6 +38,15 @@ def _history(high: float, current: float, low: float, periods: int = 260) -> pd.
     return frame
 
 
+def _market() -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {"名称": "上证指数", "最新价": 3000, "涨跌幅": 0.3, "成交额": 300_000_000_000},
+            {"名称": "沪深300", "最新价": 3500, "涨跌幅": -0.2, "成交额": 200_000_000_000},
+        ]
+    )
+
+
 def test_classify_and_filter_equity_index_fund_names() -> None:
     assert classify_fund("半导体ETF") == "半导体/芯片"
     assert classify_fund("人工智能ETF") == "人工智能/数字经济"
@@ -92,6 +101,7 @@ def test_analyze_selects_drawdown_candidates_and_builds_report() -> None:
     analyzer = IndexFundResearchAnalyzer(
         spot_fetcher=lambda: spot,
         history_fetcher=lambda code, start_date: histories[code],
+        market_fetcher=_market,
     )
 
     result = analyzer.analyze(FundResearchConfig(top_n=2, history_candidates=3))
@@ -106,8 +116,13 @@ def test_analyze_selects_drawdown_candidates_and_builds_report() -> None:
     assert "预计修复周期" in result["report"]
     assert "多分析师规则复核" in result["report"]
     assert "研究流程" in result["report"]
+    assert "大盘环境" in result["report"]
     assert "长牛逻辑" in result["report"]
+    assert "偏离原因" in result["report"]
+    assert "半年上涨50%判断" in result["report"]
     assert "风险边界" in result["report"]
+    assert result["market_snapshot_count"] == 3
+    assert result["market_context"]["indices"]
 
 
 def test_analyze_diversifies_categories_before_filling_by_score() -> None:
@@ -130,6 +145,7 @@ def test_analyze_diversifies_categories_before_filling_by_score() -> None:
     analyzer = IndexFundResearchAnalyzer(
         spot_fetcher=lambda: spot,
         history_fetcher=lambda code, start_date: histories[code],
+        market_fetcher=_market,
     )
 
     result = analyzer.analyze(FundResearchConfig(top_n=3, history_candidates=5))
@@ -138,3 +154,4 @@ def test_analyze_diversifies_categories_before_filling_by_score() -> None:
     assert len(result["candidates"]) == 3
     assert {"半导体/芯片", "人工智能/数字经济", "创新药/医疗"}.issubset(categories)
     assert result["workflow"][0].startswith("数据抓取")
+    assert "半年上涨50%概率" in result["candidates"][0]
