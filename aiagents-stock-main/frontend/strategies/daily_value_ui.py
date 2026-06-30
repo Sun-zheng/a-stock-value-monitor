@@ -4,6 +4,7 @@ import json
 import os
 import sqlite3
 import subprocess
+import sys
 from pathlib import Path
 
 import pandas as pd
@@ -13,6 +14,11 @@ import streamlit as st
 PROJECT_ROOT = Path(
     os.getenv("A_STOCK_VALUE_MONITOR_ROOT", Path(__file__).resolve().parents[3])
 )
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from src.schedule_settings import load_schedule_settings, save_schedule_settings
+
 PYTHON = PROJECT_ROOT / ".venv" / "bin" / "python"
 HISTORY_PREFERRED_COLUMNS = [
     "运行日期", "估值交易日", "代码", "名称", "行业", "上市板块", "当前价格",
@@ -105,6 +111,56 @@ def _display_schedule_status() -> None:
         st.dataframe(table[keep], width="stretch", hide_index=True)
     else:
         st.json(payload)
+
+
+def _display_global_schedule_config() -> None:
+    settings = st.session_state.get("global_schedule_settings")
+    if settings is None:
+        settings = load_schedule_settings(PROJECT_ROOT)
+        st.session_state.global_schedule_settings = settings
+    st.markdown("### 全局后台定时配置")
+    st.caption("这些任务应用后由系统后台执行，不依赖网页是否打开；电脑关机或用户级 systemd 未运行时不会执行。")
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        daily = settings["daily_analysis"]
+        daily["enabled"] = st.checkbox("每日价值扫描", bool(daily["enabled"]))
+        daily["time"] = st.text_input("价值扫描时间", str(daily["time"]))
+        daily["frequency"] = st.selectbox("价值扫描频率", ["工作日", "每天"], index=0 if daily.get("frequency") == "工作日" else 1)
+    with col2:
+        low = settings["low_price_bull"]
+        low["enabled"] = st.checkbox("低价擒牛日报", bool(low["enabled"]))
+        low["time"] = st.text_input("低价擒牛时间", str(low["time"]))
+        low["frequency"] = st.selectbox("低价擒牛频率", ["工作日", "每天"], index=0 if low.get("frequency") == "工作日" else 1)
+    with col3:
+        final = settings["final_delivery"]
+        final["enabled"] = st.checkbox("最终交付兜底", bool(final["enabled"]))
+        final["offset_minutes"] = st.number_input("兜底延后分钟", 5, 240, int(final["offset_minutes"]), 5)
+        final["frequency"] = st.selectbox("最终交付频率", ["工作日", "每天"], index=0 if final.get("frequency") == "工作日" else 1)
+    with col4:
+        etf = settings["etf_toolkit"]
+        etf["enabled"] = st.checkbox("ETF工具箱监控", bool(etf["enabled"]))
+        times = st.text_input("ETF监控时间", ",".join(etf.get("times", [])), help="多个时间用英文逗号分隔")
+        etf["times"] = [item.strip() for item in times.split(",") if item.strip()]
+        etf["frequency"] = st.selectbox("ETF监控频率", ["工作日", "每天"], index=0 if etf.get("frequency") == "工作日" else 1)
+
+    actions = st.columns(3)
+    if actions[0].button("保存定时配置", width="stretch"):
+        try:
+            saved = save_schedule_settings(PROJECT_ROOT, settings)
+            st.session_state.global_schedule_settings = saved
+            st.success("定时配置已保存。")
+        except Exception as exc:
+            st.error(f"保存失败: {type(exc).__name__}: {exc}")
+    if actions[1].button("保存并应用后台定时", width="stretch"):
+        try:
+            save_schedule_settings(PROJECT_ROOT, settings)
+            ok, output = _run_main("--apply-schedule", timeout=120)
+            st.success("后台定时已应用") if ok else st.error(output[-3000:])
+            st.code(output[-4000:])
+        except Exception as exc:
+            st.error(f"应用失败: {type(exc).__name__}: {exc}")
+    if actions[2].button("刷新调度状态", width="stretch"):
+        st.rerun()
 
 
 def _display_runtime_status() -> None:
@@ -216,6 +272,7 @@ def display_daily_value_strategy() -> None:
 
     tab_status, tab_scan, tab_history = st.tabs(["运行与调度", "日报结果", "每日股票数据"])
     with tab_status:
+        _display_global_schedule_config()
         _display_runtime_status()
         st.markdown("### 调度状态")
         _display_schedule_status()

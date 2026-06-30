@@ -100,6 +100,10 @@ def _json_safe(value):
     return value
 
 
+def _empty_snapshot() -> pd.DataFrame:
+    return pd.DataFrame(columns=["代码", "名称", "分类", "最新价", "涨跌幅", "成交额"])
+
+
 def classify_fund(name: str) -> str:
     upper_name = str(name or "").upper()
     for category, keywords in CATEGORY_KEYWORDS.items():
@@ -201,17 +205,24 @@ class IndexFundResearchAnalyzer:
             return renamed
 
     def fetch_market_snapshot(self, config: FundResearchConfig) -> pd.DataFrame:
-        spot = self.spot_fetcher().copy()
-        if spot.empty:
-            return spot
-        spot["代码"] = spot["代码"].astype(str).str.zfill(6)
-        spot["名称"] = spot["名称"].astype(str)
-        spot["成交额"] = pd.to_numeric(spot.get("成交额"), errors="coerce").fillna(0)
-        spot["最新价"] = pd.to_numeric(spot.get("最新价"), errors="coerce")
+        try:
+            spot = self.spot_fetcher().copy()
+        except Exception:
+            return _empty_snapshot()
+        if spot.empty or not {"代码", "名称"}.issubset(set(spot.columns)):
+            return _empty_snapshot()
+        spot["代码"] = spot["代码"].astype(str).str.extract(r"(\d+)", expand=False).fillna("").str.zfill(6)
+        spot["名称"] = spot["名称"].astype(str).str.strip()
+        spot["成交额"] = pd.to_numeric(spot["成交额"] if "成交额" in spot else 0, errors="coerce").fillna(0)
+        spot["最新价"] = pd.to_numeric(spot["最新价"] if "最新价" in spot else 0, errors="coerce").fillna(0)
+        for optional in ("涨跌幅", "流通市值", "总市值", "换手率", "IOPV实时估值", "基金折价率", "最新份额", "量比"):
+            if optional in spot:
+                spot[optional] = pd.to_numeric(spot[optional], errors="coerce").fillna(0)
         mask = (
             spot["名称"].map(is_equity_index_fund)
             & spot["最新价"].gt(0)
             & spot["成交额"].ge(config.min_turnover)
+            & spot["代码"].ne("000000")
         )
         data = spot[mask].copy()
         data["分类"] = data["名称"].map(classify_fund)
@@ -337,11 +348,15 @@ class IndexFundResearchAnalyzer:
         if history is None or history.empty or len(history) < 120:
             return None
         data = history.copy()
+        required = {"日期", "收盘", "最高", "最低"}
+        if not required.issubset(set(data.columns)):
+            return None
         data["日期"] = pd.to_datetime(data["日期"])
         for field in ("收盘", "最高", "最低", "成交额", "涨跌幅"):
-            data[field] = pd.to_numeric(data[field], errors="coerce")
+            data[field] = pd.to_numeric(data[field] if field in data else 0, errors="coerce")
         data = data.dropna(subset=["收盘", "最高", "最低"])
-        if data.empty:
+        data = data[data["收盘"].gt(0) & data["最高"].gt(0) & data["最低"].gt(0)].sort_values("日期")
+        if data.empty or len(data) < 120:
             return None
 
         current = float(data["收盘"].iloc[-1])

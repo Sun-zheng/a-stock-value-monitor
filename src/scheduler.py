@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from src.schedule_settings import frequency_calendar_prefix, load_schedule_settings
+
 
 TASK_NAME = "A股主板低估股票每日分析自动化"
 FALLBACK_TASK_NAME = "A股主板低估股票每日交付兜底"
@@ -18,6 +20,8 @@ SYSTEMD_DELIVERY_TIMER = "stock-final-delivery.timer"
 SYSTEMD_SITE_SERVICE = "stock-site.service"
 SYSTEMD_LOW_PRICE_BULL_SERVICE = "stock-low-price-bull.service"
 SYSTEMD_LOW_PRICE_BULL_TIMER = "stock-low-price-bull.timer"
+SYSTEMD_ETF_TOOLKIT_SERVICE = "stock-etf-toolkit"
+SYSTEMD_ETF_TOOLKIT_TIMER = "stock-etf-toolkit"
 LOW_PRICE_BULL_RUN_TIME = "14:00"
 
 
@@ -139,42 +143,68 @@ def _write_user_unit(name: str, content: str) -> Path:
     return path
 
 
-def scheduled_commands(run_time: str) -> list[ScheduledCommand]:
+def scheduled_commands(run_time: str, project_root: Path | None = None) -> list[ScheduledCommand]:
     """Standard timer jobs.
 
     Add future scheduled CLI jobs here. The same definitions drive unit
     generation, enablement, status collection, and tests.
     """
-    fallback_time = add_minutes(run_time, 30)
-    return [
-        ScheduledCommand(
+    root = project_root or Path.cwd()
+    settings = load_schedule_settings(root)
+    daily = settings["daily_analysis"]
+    low_price = settings["low_price_bull"]
+    delivery = settings["final_delivery"]
+    etf = settings["etf_toolkit"]
+    daily_time = str(daily.get("time") or run_time)
+    fallback_time = add_minutes(daily_time, int(delivery.get("offset_minutes", 30)))
+    commands = []
+    if daily.get("enabled", True):
+        commands.append(ScheduledCommand(
             name="daily-analysis",
             description="A-share daily Buffett-Munger analysis pipeline",
             service_name=SYSTEMD_ANALYSIS_SERVICE,
             timer_name=SYSTEMD_ANALYSIS_TIMER,
             command="--run-pipeline",
-            calendar=f"Mon..Fri {run_time}:00",
+            calendar=f"{frequency_calendar_prefix(daily.get('frequency', '工作日'))} {daily_time}:00",
             order=20,
-        ),
-        ScheduledCommand(
+        ))
+    if low_price.get("enabled", True):
+        commands.append(ScheduledCommand(
             name="low-price-bull",
             description="Low-price bull daily selector and email report",
             service_name=SYSTEMD_LOW_PRICE_BULL_SERVICE,
             timer_name=SYSTEMD_LOW_PRICE_BULL_TIMER,
             command="--run-low-price-bull",
-            calendar=f"Mon..Fri {LOW_PRICE_BULL_RUN_TIME}:00",
+            calendar=f"{frequency_calendar_prefix(low_price.get('frequency', '工作日'))} {low_price.get('time', LOW_PRICE_BULL_RUN_TIME)}:00",
             order=30,
-        ),
-        ScheduledCommand(
+        ))
+    if delivery.get("enabled", True):
+        commands.append(ScheduledCommand(
             name="final-delivery",
             description="A-share final report delivery fallback",
             service_name=SYSTEMD_DELIVERY_SERVICE,
             timer_name=SYSTEMD_DELIVERY_TIMER,
             command="--deliver-final-report",
-            calendar=f"Mon..Fri {fallback_time}:00",
+            calendar=f"{frequency_calendar_prefix(delivery.get('frequency', '工作日'))} {fallback_time}:00",
             order=40,
-        ),
-    ]
+        ))
+    if not etf.get("enabled", True):
+        return commands
+    day_part = frequency_calendar_prefix(etf.get("frequency", "工作日"))
+    for index, time_str in enumerate(etf.get("times", ["15:20"]) or ["15:20"], start=1):
+        suffix = f"-{index}"
+        commands.append(
+            ScheduledCommand(
+                name=f"etf-toolkit{suffix}",
+                description="ETF toolkit monitor, alerts, email and Lark delivery",
+                service_name=f"{SYSTEMD_ETF_TOOLKIT_SERVICE}{suffix}.service",
+                timer_name=f"{SYSTEMD_ETF_TOOLKIT_TIMER}{suffix}.timer",
+                command="--run-etf-toolkit-monitor",
+                calendar=f"{day_part} {time_str}:00",
+                order=50 + index,
+            )
+        )
+    return commands
 
 
 def _oneshot_service_content(
@@ -245,7 +275,7 @@ def build_systemd_unit_specs(
             """,
         )
     ]
-    for job in scheduled_commands(run_time):
+    for job in scheduled_commands(run_time, project_root):
         specs.append(
             SystemdUnitSpec(
                 name=job.timer_name,

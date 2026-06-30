@@ -13,6 +13,7 @@ from src.analysis_history import write_analysis_history
 from src.data_source_manager import DataSourceManager
 from src.daily_comparison import compare_previous_day
 from src.email_sender import send_email
+from src.etf_toolkit_daily import run_etf_toolkit_monitor
 from src.freshness import freshness_report
 from src.lark_bitable_client import LarkBitableClient
 from src.logger import build_logger
@@ -745,6 +746,7 @@ def main() -> int:
     parser.add_argument("--no-delivery", action="store_true")
     parser.add_argument("--deliver-final-report", action="store_true")
     parser.add_argument("--run-low-price-bull", action="store_true")
+    parser.add_argument("--run-etf-toolkit-monitor", action="store_true")
     parser.add_argument("--apply-schedule", action="store_true")
     parser.add_argument("--schedule-status", action="store_true")
     parser.add_argument("--config-web", action="store_true")
@@ -777,6 +779,10 @@ def main() -> int:
         result = health_check(settings); output(result); return 0 if result["健康"] else 2
     if args.run_low_price_bull:
         result = run_low_price_bull_daily(settings.project_root)
+        output(result)
+        return 0 if result.get("success") else 2
+    if args.run_etf_toolkit_monitor:
+        result = run_etf_toolkit_monitor(settings.project_root)
         output(result)
         return 0 if result.get("success") else 2
     if args.data_freshness_check:

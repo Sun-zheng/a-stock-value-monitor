@@ -4,6 +4,7 @@ from src.scheduler import (
     LOW_PRICE_BULL_RUN_TIME,
     SYSTEMD_ANALYSIS_TIMER,
     SYSTEMD_DELIVERY_TIMER,
+    SYSTEMD_ETF_TOOLKIT_TIMER,
     SYSTEMD_LOW_PRICE_BULL_TIMER,
     add_minutes,
     build_systemd_unit_specs,
@@ -21,8 +22,8 @@ def test_low_price_bull_runs_at_two_pm():
     assert LOW_PRICE_BULL_RUN_TIME == "14:00"
 
 
-def test_scheduled_commands_define_extensible_timer_contract():
-    jobs = scheduled_commands("14:10")
+def test_scheduled_commands_define_extensible_timer_contract(tmp_path):
+    jobs = scheduled_commands("14:10", tmp_path)
     by_name = {job.name: job for job in jobs}
 
     assert by_name["daily-analysis"].timer_name == SYSTEMD_ANALYSIS_TIMER
@@ -30,6 +31,8 @@ def test_scheduled_commands_define_extensible_timer_contract():
     assert by_name["low-price-bull"].timer_name == SYSTEMD_LOW_PRICE_BULL_TIMER
     assert by_name["final-delivery"].timer_name == SYSTEMD_DELIVERY_TIMER
     assert by_name["final-delivery"].calendar == "Mon..Fri 14:40:00"
+    assert by_name["etf-toolkit-1"].timer_name == f"{SYSTEMD_ETF_TOOLKIT_TIMER}-1.timer"
+    assert by_name["etf-toolkit-1"].calendar == "Mon..Fri 15:20:00"
 
 
 def test_build_systemd_unit_specs_includes_services_and_enabled_timers(tmp_path):
@@ -50,6 +53,9 @@ def test_build_systemd_unit_specs_includes_services_and_enabled_timers(tmp_path)
     ].content
     assert "OnCalendar=Mon..Fri 14:00:00" in by_name[
         SYSTEMD_LOW_PRICE_BULL_TIMER
+    ].content
+    assert "ExecStart=/usr/bin/python3 main.py --run-etf-toolkit-monitor" in by_name[
+        "stock-etf-toolkit-1.service"
     ].content
 
 

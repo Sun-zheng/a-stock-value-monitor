@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Callable
 
 import pandas as pd
@@ -27,11 +27,17 @@ class ETFToolkitConfig:
     min_price: float = 0.0
     monthly_budget: float = 5000.0
     holding_top_n: int = 5
+    include_premium_discount: bool = True
+    include_holdings: bool = True
+    include_index_info: bool = True
+    cache_ttl_minutes: int = 30
     start_date: str = "20210101"
 
 
 class ETFToolkitAnalyzer(IndexFundResearchAnalyzer):
     """ETF screener, rotation, and portfolio construction workflow."""
+
+    _shared_cache: dict[str, tuple[datetime, pd.DataFrame]] = {}
 
     def __init__(
         self,
@@ -103,13 +109,17 @@ class ETFToolkitAnalyzer(IndexFundResearchAnalyzer):
             profile: self._build_portfolio(frame, profile)
             for profile in RISK_PROFILES
         }
-        premium_discount = self._build_premium_discount(screener)
+        premium_discount = self._build_premium_discount(screener, config)
         dca_plans = self._build_dca_plans(screener, config.monthly_budget)
         risk_radar = self._build_risk_radar(screener)
-        comparison = self._build_comparison(screener)
+        comparison = self._build_comparison(screener, config)
         opportunity_pool = self._build_opportunity_pool(screener)
         periodic_report = self._build_periodic_report(screener, rotation, opportunity_pool)
-        holdings = self._build_holdings_analysis(screener, config.holding_top_n)
+        holdings = (
+            self._build_holdings_analysis(screener, config.holding_top_n)
+            if config.include_holdings and config.holding_top_n > 0
+            else {"ETF持仓明细": [], "重复暴露": [], "errors": [], "skipped": "未启用持仓穿透"}
+        )
         report = self.build_toolkit_report(
             screener=screener,
             rotation=rotation,
@@ -127,6 +137,7 @@ class ETFToolkitAnalyzer(IndexFundResearchAnalyzer):
             "success": bool(rows),
             "generated_at": datetime.now().isoformat(timespec="seconds"),
             "config": config.__dict__,
+            "data_quality": self._data_quality(snapshot, rows, errors, config),
             "market_snapshot_count": int(len(snapshot)),
             "analyzed_count": int(len(rows)),
             "error_count": len(errors),
@@ -153,6 +164,25 @@ class ETFToolkitAnalyzer(IndexFundResearchAnalyzer):
                 "持仓穿透: 对Top ETF读取季度持仓，识别重仓股、重叠和集中度。",
                 "风险雷达/对比/机会池: 输出风险标签、横向对比、日报周报和观察池变化。",
             ],
+        }
+
+    @staticmethod
+    def _data_quality(snapshot: pd.DataFrame, rows: list[dict], errors: list[str], config: ETFToolkitConfig) -> dict:
+        dates = []
+        for column in ("数据日期", "更新时间"):
+            if column in snapshot.columns:
+                values = [str(value) for value in snapshot[column].dropna().unique().tolist() if str(value).strip()]
+                dates.extend(values[:3])
+        return {
+            "快照ETF数量": int(len(snapshot)),
+            "历史分析成功数量": int(len(rows)),
+            "历史分析失败数量": int(len(errors)),
+            "快照时间字段": dates,
+            "启用溢价折价": bool(config.include_premium_discount),
+            "启用持仓穿透": bool(config.include_holdings),
+            "启用基金档案": bool(config.include_index_info),
+            "最小成交额": float(config.min_turnover),
+            "历史起始日": config.start_date,
         }
 
     @staticmethod
@@ -302,9 +332,21 @@ class ETFToolkitAnalyzer(IndexFundResearchAnalyzer):
             return "先确认成交额和底层市场是否正常，折价收敛前分批观察。"
         return "可纳入常规观察，重点跟踪成交额、量比和趋势变化。"
 
-    def _daily_discount_map(self) -> dict[str, dict]:
+    @classmethod
+    def _cached_frame(cls, key: str, ttl_minutes: int, fetcher: Callable[[], pd.DataFrame]) -> pd.DataFrame:
+        cached = cls._shared_cache.get(key)
+        now = datetime.now()
+        if cached and now - cached[0] <= timedelta(minutes=max(1, ttl_minutes)):
+            return cached[1].copy()
+        frame = fetcher()
+        cls._shared_cache[key] = (now, frame.copy())
+        return frame
+
+    def _daily_discount_map(self, config: ETFToolkitConfig) -> dict[str, dict]:
+        if not config.include_premium_discount:
+            return {}
         try:
-            daily = self.fund_daily_fetcher()
+            daily = self._cached_frame("fund_daily", config.cache_ttl_minutes, self.fund_daily_fetcher)
         except Exception:
             return {}
         if daily is None or daily.empty or "基金代码" not in daily.columns:
@@ -323,9 +365,11 @@ class ETFToolkitAnalyzer(IndexFundResearchAnalyzer):
             }
         return mapping
 
-    def _index_info_map(self) -> dict[str, dict]:
+    def _index_info_map(self, config: ETFToolkitConfig) -> dict[str, dict]:
+        if not config.include_index_info:
+            return {}
         try:
-            info = self.index_info_fetcher()
+            info = self._cached_frame("index_info", config.cache_ttl_minutes, self.index_info_fetcher)
         except Exception:
             return {}
         if info is None or info.empty or "基金代码" not in info.columns:
@@ -343,8 +387,10 @@ class ETFToolkitAnalyzer(IndexFundResearchAnalyzer):
             }
         return mapping
 
-    def _build_premium_discount(self, screener: list[dict]) -> list[dict]:
-        daily_map = self._daily_discount_map()
+    def _build_premium_discount(self, screener: list[dict], config: ETFToolkitConfig) -> list[dict]:
+        if not config.include_premium_discount:
+            return []
+        daily_map = self._daily_discount_map(config)
         rows = []
         for item in screener:
             code = str(item.get("代码", "")).zfill(6)
@@ -450,8 +496,8 @@ class ETFToolkitAnalyzer(IndexFundResearchAnalyzer):
         level_order = {"高": 0, "中": 1, "低": 2}
         return sorted(rows, key=lambda item: (level_order[item["风险等级"]], -_num(item.get("高点回撤"))))
 
-    def _build_comparison(self, screener: list[dict]) -> list[dict]:
-        info_map = self._index_info_map()
+    def _build_comparison(self, screener: list[dict], config: ETFToolkitConfig) -> list[dict]:
+        info_map = self._index_info_map(config)
         rows = []
         for item in screener[:20]:
             code = str(item.get("代码", "")).zfill(6)
