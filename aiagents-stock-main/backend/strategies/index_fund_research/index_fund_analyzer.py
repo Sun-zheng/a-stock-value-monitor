@@ -218,7 +218,8 @@ class IndexFundResearchAnalyzer:
         keep = [
             column for column in [
                 "代码", "名称", "分类", "最新价", "涨跌幅", "成交额", "流通市值",
-                "总市值", "换手率", "数据日期", "更新时间",
+                "总市值", "换手率", "IOPV实时估值", "基金折价率", "最新份额",
+                "量比", "数据日期", "更新时间",
             ] if column in data.columns
         ]
         data = data[keep].sort_values("成交额", ascending=False)
@@ -396,6 +397,12 @@ class IndexFundResearchAnalyzer:
             "年化波动": round(annual_vol, 2),
             "历史最大回撤": round(max_drawdown_pct, 2),
             "成交额": round(turnover, 2),
+            "流通市值": round(_num(fund.get("流通市值")), 2),
+            "总市值": round(_num(fund.get("总市值")), 2),
+            "IOPV实时估值": round(_num(fund.get("IOPV实时估值")), 4),
+            "基金折价率": round(_num(fund.get("基金折价率")), 4),
+            "最新份额": round(_num(fund.get("最新份额")), 2),
+            "量比": round(_num(fund.get("量比")), 2),
             "MA20": round(ma20, 4),
             "MA60": round(ma60, 4),
             "MA120": round(ma120, 4),

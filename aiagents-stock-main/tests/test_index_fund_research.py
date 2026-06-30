@@ -195,10 +195,10 @@ def test_major_market_etf_analyzer_filters_broad_market_etfs() -> None:
 def test_etf_toolkit_builds_screener_rotation_and_portfolios() -> None:
     spot = pd.DataFrame(
         [
-            {"代码": "510300", "名称": "沪深300ETF", "最新价": 4.0, "涨跌幅": 0.5, "成交额": 300_000_000},
-            {"代码": "512760", "名称": "半导体ETF", "最新价": 0.8, "涨跌幅": 1.0, "成交额": 500_000_000},
-            {"代码": "159992", "名称": "创新药ETF", "最新价": 0.7, "涨跌幅": -0.5, "成交额": 120_000_000},
-            {"代码": "515790", "名称": "光伏ETF", "最新价": 0.9, "涨跌幅": 0.2, "成交额": 90_000_000},
+            {"代码": "510300", "名称": "沪深300ETF", "最新价": 4.0, "涨跌幅": 0.5, "成交额": 300_000_000, "IOPV实时估值": 4.01, "基金折价率": 0.25, "总市值": 10_000_000_000, "量比": 1.2},
+            {"代码": "512760", "名称": "半导体ETF", "最新价": 0.8, "涨跌幅": 1.0, "成交额": 500_000_000, "IOPV实时估值": 0.79, "基金折价率": -1.25, "总市值": 8_000_000_000, "量比": 2.4},
+            {"代码": "159992", "名称": "创新药ETF", "最新价": 0.7, "涨跌幅": -0.5, "成交额": 120_000_000, "IOPV实时估值": 0.71, "基金折价率": 1.1, "总市值": 2_000_000_000, "量比": 0.9},
+            {"代码": "515790", "名称": "光伏ETF", "最新价": 0.9, "涨跌幅": 0.2, "成交额": 90_000_000, "IOPV实时估值": 0.88, "基金折价率": -2.2, "总市值": 1_000_000_000, "量比": 2.1},
         ]
     )
     histories = {
@@ -207,13 +207,37 @@ def test_etf_toolkit_builds_screener_rotation_and_portfolios() -> None:
         "159992": _history(1.5, 0.75, 0.58),
         "515790": _history(1.8, 0.9, 0.72),
     }
+    fund_daily = pd.DataFrame(
+        [
+            {"基金代码": "510300", "2026-06-29-单位净值": 4.01, "市价": 4.0, "折价率": 0.25},
+            {"基金代码": "512760", "2026-06-29-单位净值": 0.79, "市价": 0.8, "折价率": -1.25},
+        ]
+    )
+    index_info = pd.DataFrame(
+        [
+            {"基金代码": "510300", "手续费": "0.12%", "跟踪标的": "沪深300", "跟踪方式": "完全复制"},
+            {"基金代码": "512760", "手续费": "0.15%", "跟踪标的": "中证半导体", "跟踪方式": "完全复制"},
+        ]
+    )
+
+    def holdings(code: str) -> pd.DataFrame:
+        return pd.DataFrame(
+            [
+                {"股票代码": "600519", "股票名称": "贵州茅台", "占净值比例": 5.0, "季度": "2025年4季度"},
+                {"股票代码": "300750", "股票名称": "宁德时代", "占净值比例": 4.0, "季度": "2025年4季度"},
+            ]
+        )
+
     analyzer = ETFToolkitAnalyzer(
         spot_fetcher=lambda: spot,
         history_fetcher=lambda code, start_date: histories[code],
         market_fetcher=_market,
+        fund_daily_fetcher=lambda: fund_daily,
+        holdings_fetcher=holdings,
+        index_info_fetcher=lambda: index_info,
     )
 
-    result = analyzer.analyze_toolkit(ETFToolkitConfig(max_history=4, min_turnover=1))
+    result = analyzer.analyze_toolkit(ETFToolkitConfig(max_history=4, min_turnover=1, monthly_budget=3000, holding_top_n=3))
 
     assert result["success"] is True
     assert result["market_snapshot_count"] == 4
@@ -222,4 +246,15 @@ def test_etf_toolkit_builds_screener_rotation_and_portfolios() -> None:
     assert result["rotation"]
     assert set(result["portfolios"]) == {"稳健", "平衡", "进取"}
     assert result["portfolios"]["平衡"]["positions"]
+    assert result["dca_plans"][0]["建议月定投金额"] > 0
+    assert result["premium_discount"][0]["状态"]
+    assert result["holdings"]["ETF持仓明细"]
+    assert result["holdings"]["重复暴露"]
+    assert result["risk_radar"]
+    assert result["comparison"][0]["跟踪指数"] is not None
+    assert result["periodic_report"]["总览"]
+    assert result["opportunity_pool"]["低估回撤池"]
     assert "ETF策略工具箱报告" in result["report"]
+    assert "定投计划" in result["report"]
+    assert "溢价/折价监控" in result["report"]
+    assert "持仓穿透" in result["report"]
