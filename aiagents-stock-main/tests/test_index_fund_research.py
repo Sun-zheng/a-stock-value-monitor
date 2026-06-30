@@ -12,6 +12,10 @@ from backend.strategies.index_fund_research.major_market_etf_analyzer import (
     MajorMarketETFAnalyzer,
     MajorMarketETFConfig,
 )
+from backend.strategies.index_fund_research.etf_toolkit_analyzer import (
+    ETFToolkitAnalyzer,
+    ETFToolkitConfig,
+)
 
 
 def _history(high: float, current: float, low: float, periods: int = 260) -> pd.DataFrame:
@@ -186,3 +190,36 @@ def test_major_market_etf_analyzer_filters_broad_market_etfs() -> None:
     assert {item["代码"] for item in result["candidates"]} == {"510300", "510050"}
     assert "主要市场大盘ETF指数分析报告" in result["report"]
     assert "大盘配置评分" in result["candidates"][0]
+
+
+def test_etf_toolkit_builds_screener_rotation_and_portfolios() -> None:
+    spot = pd.DataFrame(
+        [
+            {"代码": "510300", "名称": "沪深300ETF", "最新价": 4.0, "涨跌幅": 0.5, "成交额": 300_000_000},
+            {"代码": "512760", "名称": "半导体ETF", "最新价": 0.8, "涨跌幅": 1.0, "成交额": 500_000_000},
+            {"代码": "159992", "名称": "创新药ETF", "最新价": 0.7, "涨跌幅": -0.5, "成交额": 120_000_000},
+            {"代码": "515790", "名称": "光伏ETF", "最新价": 0.9, "涨跌幅": 0.2, "成交额": 90_000_000},
+        ]
+    )
+    histories = {
+        "510300": _history(5.0, 4.0, 3.4),
+        "512760": _history(1.7, 0.86, 0.68),
+        "159992": _history(1.5, 0.75, 0.58),
+        "515790": _history(1.8, 0.9, 0.72),
+    }
+    analyzer = ETFToolkitAnalyzer(
+        spot_fetcher=lambda: spot,
+        history_fetcher=lambda code, start_date: histories[code],
+        market_fetcher=_market,
+    )
+
+    result = analyzer.analyze_toolkit(ETFToolkitConfig(max_history=4, min_turnover=1))
+
+    assert result["success"] is True
+    assert result["market_snapshot_count"] == 4
+    assert result["analyzed_count"] == 4
+    assert result["screener"]
+    assert result["rotation"]
+    assert set(result["portfolios"]) == {"稳健", "平衡", "进取"}
+    assert result["portfolios"]["平衡"]["positions"]
+    assert "ETF策略工具箱报告" in result["report"]
