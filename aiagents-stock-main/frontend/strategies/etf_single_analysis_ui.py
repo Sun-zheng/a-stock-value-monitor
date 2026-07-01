@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pandas as pd
 import streamlit as st
+from dotenv import load_dotenv
 
 PROJECT_ROOT = Path(
     os.getenv("A_STOCK_VALUE_MONITOR_ROOT", Path(__file__).resolve().parents[3])
@@ -14,6 +15,9 @@ PROJECT_ROOT = Path(
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+load_dotenv(PROJECT_ROOT / ".env", override=False)
+
+from interface.ai.deepseek_client import DeepSeekClient
 from backend.strategies.index_fund_research.etf_toolkit_analyzer import ETFToolkitAnalyzer, ETFToolkitConfig
 from backend.strategies.index_fund_research.etf_toolkit_settings import load_etf_toolkit_settings
 from backend.strategies.index_fund_research.etf_toolkit_store import ETFToolkitStore
@@ -30,6 +34,13 @@ TOPICS = [
     "ETF对比",
     "日报周报",
     "完整报告",
+]
+
+MODELSCOPE_MODELS = [
+    "stepfun-ai/Step-3.7-Flash",
+    "MiniMax/MiniMax-M3",
+    "moonshotai/Kimi-K2.7-Code:Moonshot",
+    "deepseek-ai/DeepSeek-V4-Pro",
 ]
 
 
@@ -104,6 +115,28 @@ def display_etf_single_analysis() -> None:
         )
     if not topics:
         topics = ["基础筛选"]
+
+    ai_cols = st.columns([1, 1.4, 1.6])
+    modelscope_ready = bool(os.getenv("MODELSCOPE_API_KEY", "").strip())
+    with ai_cols[0]:
+        enable_ai_review = st.checkbox(
+            "启用AI复核",
+            value=modelscope_ready,
+            key="etf_enable_ai_review",
+            help="仅调用ModelScope OpenAI兼容接口，不调用DeepSeek。",
+        )
+    with ai_cols[1]:
+        ai_model = st.selectbox(
+            "AI复核模型",
+            MODELSCOPE_MODELS,
+            key="etf_ai_review_model",
+            disabled=not enable_ai_review,
+        )
+    with ai_cols[2]:
+        if enable_ai_review and not modelscope_ready:
+            st.warning("未检测到 MODELSCOPE_API_KEY，AI复核会跳过。")
+        elif enable_ai_review:
+            st.caption("AI复核已限制为 ModelScope 模型，不会走 DeepSeek。")
 
     filtered = _filter_snapshot(snapshot, category, keyword)
     filtered = filtered.sort_values("成交额", ascending=False).head(200)
@@ -182,7 +215,15 @@ def display_etf_single_analysis() -> None:
 
     if st.button("开始ETF分析", type="primary", width="stretch", disabled=not selected_rows):
         analyzer = ETFToolkitAnalyzer()
-        result = _analyze_etfs(analyzer, selected_rows, topics, settings, start_date.strip() or "20210101")
+        result = _analyze_etfs(
+            analyzer,
+            selected_rows,
+            topics,
+            settings,
+            start_date.strip() or "20210101",
+            enable_ai_review=enable_ai_review,
+            ai_model=ai_model,
+        )
         result.update(ETFToolkitStore(PROJECT_ROOT).save_history_result(result, settings, module="ETF分析", result_type=result.get("result_type", "etf_analysis")))
         st.session_state.etf_single_analysis_result = result
         st.success(f"分析完成，已写入ETF历史记录：{result.get('history_path')}")
@@ -383,6 +424,14 @@ def _display_analyst_reports(result: dict) -> None:
     if not reports:
         st.info("暂无分析师报告。")
         return
+    ai_review = result.get("ai_review") or {}
+    if ai_review:
+        if ai_review.get("success"):
+            st.success(f"ModelScope AI复核完成：{ai_review.get('model')}")
+            with st.expander("ModelScope AI复核结论", expanded=True):
+                st.markdown(ai_review.get("content", ""))
+        else:
+            st.warning(f"ModelScope AI复核未完成：{ai_review.get('error') or ai_review.get('status')}")
     tabs = st.tabs([item["agent_name"] for item in reports])
     for tab, item in zip(tabs, reports):
         with tab:
@@ -539,6 +588,8 @@ def _analyze_etfs(
     topics: list[str],
     settings: dict,
     start_date: str,
+    enable_ai_review: bool = False,
+    ai_model: str = MODELSCOPE_MODELS[0],
 ) -> dict:
     if len(selected_rows) == 1:
         result = _analyze_single_etf(analyzer, selected_rows[0], topics, settings, start_date)
@@ -548,6 +599,7 @@ def _analyze_etfs(
         result["result_type"] = str(result.get("selected_etf", {}).get("代码", "single_etf"))
         result["analyst_reports"] = _build_etf_analyst_reports(result)
         result["final_summary"] = _build_final_summary(result)
+        result["ai_review"] = _run_modelscope_ai_review(result, ai_model) if enable_ai_review else {"status": "disabled"}
         return result
 
     errors = []
@@ -634,7 +686,73 @@ def _analyze_etfs(
     }
     result["analyst_reports"] = _build_etf_analyst_reports(result)
     result["final_summary"] = _build_final_summary(result)
+    result["ai_review"] = _run_modelscope_ai_review(result, ai_model) if enable_ai_review else {"status": "disabled"}
     return result
+
+
+def _run_modelscope_ai_review(result: dict, model: str) -> dict:
+    if model not in MODELSCOPE_MODELS:
+        return {"success": False, "model": model, "error": "模型不在ModelScope ETF复核白名单"}
+    if not os.getenv("MODELSCOPE_API_KEY", "").strip():
+        return {"success": False, "model": model, "error": "MODELSCOPE_API_KEY未配置"}
+    prompt = _build_ai_review_prompt(result)
+    started = datetime.now()
+    try:
+        content = DeepSeekClient(model=model).call_api(
+            [
+                {
+                    "role": "system",
+                    "content": "你是ETF投研复核智能体。只基于用户给出的结构化数据做审慎分析，不承诺收益，不编造外部事实。",
+                },
+                {"role": "user", "content": prompt},
+            ],
+            model=model,
+            temperature=0.2,
+            max_tokens=1400,
+        )
+        if content.startswith("API调用失败"):
+            return {"success": False, "model": model, "error": content, "latency_seconds": (datetime.now() - started).total_seconds()}
+        return {
+            "success": True,
+            "model": model,
+            "content": content,
+            "latency_seconds": (datetime.now() - started).total_seconds(),
+        }
+    except Exception as exc:
+        return {"success": False, "model": model, "error": str(exc), "latency_seconds": (datetime.now() - started).total_seconds()}
+
+
+def _build_ai_review_prompt(result: dict) -> str:
+    screener = pd.DataFrame(result.get("screener", []))
+    if not screener.empty:
+        columns = [c for c in ["代码", "名称", "分类", "最新价", "高点回撤", "近一年收益", "年化波动", "成交额", "筛选评分", "风险标签"] if c in screener.columns]
+        table_text = screener[columns].head(20).to_csv(index=False)
+    else:
+        table_text = "无成功分析ETF"
+    risk = result.get("risk_radar", [])[:10]
+    dca = result.get("dca_plans", [])[:10]
+    final_summary = result.get("final_summary") or _build_final_summary(result)
+    return f"""
+请对下面ETF批量分析结果做二次复核，输出总分总结构，控制在900字以内：
+
+要求：
+1. 先给一句总判断。
+2. 分别从流动性、估值/回撤、风险、配置策略四个角度复核。
+3. 指出最值得观察的ETF和必须回避/谨慎的风险点。
+4. 不要给确定收益承诺，不要说半年必涨，不构成投资建议。
+
+基础结论：
+{final_summary}
+
+ETF明细：
+{table_text}
+
+风险雷达样本：
+{risk}
+
+定投计划样本：
+{dca}
+""".strip()
 
 
 def _analyze_single_etf(

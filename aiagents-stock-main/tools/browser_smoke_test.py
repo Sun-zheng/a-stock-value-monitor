@@ -71,7 +71,7 @@ def main() -> int:
                 "() => document.body.innerText.includes('直接定位ETF') && document.body.innerText.includes('选中代码')",
                 timeout=60_000,
             )
-            for text in ("分析方式", "ETF主题", "分析模块", "选择ETF", "模糊搜索", "直接定位ETF", "选中代码"):
+            for text in ("启用AI复核", "AI复核模型", "分析方式", "ETF主题", "分析模块", "选择ETF", "模糊搜索", "直接定位ETF", "选中代码"):
                 _assert_text(page, text, failures, "ETF analysis")
             page.get_by_placeholder("输入代码、名称、主题，例如 300、沪深300、红利、半导体").fill("300")
             page.wait_for_timeout(3_000)
