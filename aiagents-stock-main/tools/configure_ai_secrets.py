@@ -9,7 +9,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_ENV_PATH = Path(
-    os.getenv("AIAGENTS_ENV_FILE", Path.home() / ".config" / "a-stock-value-monitor" / "aiagents.env")
+    os.getenv("AIAGENTS_ENV_FILE", ROOT / ".env")
 )
 
 SECRET_KEYS = {

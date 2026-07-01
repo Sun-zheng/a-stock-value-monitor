@@ -18,6 +18,7 @@ from interface.ai.provider_config import PROVIDERS, resolve_provider  # noqa: E4
 
 
 DEFAULT_TEST_MODELS = [
+    "deepseek-ai/DeepSeek-V4-Flash",
     "stepfun-ai/Step-3.7-Flash",
     "moonshotai/Kimi-K2.7-Code:Moonshot",
 ]

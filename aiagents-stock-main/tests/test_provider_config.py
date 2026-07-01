@@ -20,6 +20,9 @@ def test_resolve_provider_for_new_modelscope_models():
     assert resolve_provider("moonshotai/Kimi-K2.7-Code:Moonshot").name == "modelscope"
     assert resolve_provider("stepfun-ai/Step-3.7-Flash").name == "modelscope"
     assert resolve_provider("MiniMax/MiniMax-M3").name == "modelscope"
+    assert resolve_provider("deepseek-ai/DeepSeek-V4-Flash").name == "modelscope"
+    assert resolve_provider("ZhipuAI/GLM-5.2").name == "modelscope"
+    assert resolve_provider("inclusionAI/Ring-2.6-1T").name == "modelscope"
 
 
 def test_resolve_provider_defaults_to_deepseek():

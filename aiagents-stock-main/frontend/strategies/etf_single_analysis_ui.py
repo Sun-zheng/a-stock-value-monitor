@@ -17,7 +17,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 load_dotenv(PROJECT_ROOT / ".env", override=False)
 
-from interface.ai.deepseek_client import DeepSeekClient
+from interface.ai.ai_engine import AIEngine
 from backend.strategies.index_fund_research.etf_toolkit_analyzer import ETFToolkitAnalyzer, ETFToolkitConfig
 from backend.strategies.index_fund_research.etf_toolkit_settings import load_etf_toolkit_settings
 from backend.strategies.index_fund_research.etf_toolkit_store import ETFToolkitStore
@@ -37,10 +37,13 @@ TOPICS = [
 ]
 
 MODELSCOPE_MODELS = [
+    "deepseek-ai/DeepSeek-V4-Flash",
     "stepfun-ai/Step-3.7-Flash",
-    "MiniMax/MiniMax-M3",
+    "ZhipuAI/GLM-5.2",
     "moonshotai/Kimi-K2.7-Code:Moonshot",
     "deepseek-ai/DeepSeek-V4-Pro",
+    "MiniMax/MiniMax-M3",
+    "inclusionAI/Ring-2.6-1T",
 ]
 
 
@@ -698,7 +701,7 @@ def _run_modelscope_ai_review(result: dict, model: str) -> dict:
     prompt = _build_ai_review_prompt(result)
     started = datetime.now()
     try:
-        content = DeepSeekClient(model=model).call_api(
+        response = AIEngine(default_model=model).chat(
             [
                 {
                     "role": "system",
@@ -709,13 +712,16 @@ def _run_modelscope_ai_review(result: dict, model: str) -> dict:
             model=model,
             temperature=0.2,
             max_tokens=1400,
+            allowed_providers={"modelscope"},
+            use_pool=False,
         )
-        if content.startswith("API调用失败"):
-            return {"success": False, "model": model, "error": content, "latency_seconds": (datetime.now() - started).total_seconds()}
+        if not response.ok:
+            return {"success": False, "model": model, "provider": response.provider, "error": response.error, "latency_seconds": (datetime.now() - started).total_seconds()}
         return {
             "success": True,
-            "model": model,
-            "content": content,
+            "model": response.model,
+            "provider": response.provider,
+            "content": response.content,
             "latency_seconds": (datetime.now() - started).total_seconds(),
         }
     except Exception as exc:
