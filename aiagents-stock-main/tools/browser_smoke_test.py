@@ -59,20 +59,20 @@ def main() -> int:
             _assert_text(page, "选择功能", failures, "ETF toolkit run")
         page.screenshot(path=str(output_dir / "etf_toolkit.png"), full_page=True)
 
-        _click_visible_button(page, "单只ETF分析")
+        _click_visible_button(page, "ETF分析")
         page.wait_for_function(
             "() => document.body.innerText.includes('ETF主题') || document.body.innerText.includes('未获取到ETF快照')",
             timeout=180_000,
         )
-        for text in ("单只ETF分析", "最低成交额", "历史起始日"):
-            _assert_text(page, text, failures, "single ETF analysis")
+        for text in ("ETF分析", "最低成交额", "历史起始日"):
+            _assert_text(page, text, failures, "ETF analysis")
         if "未获取到ETF快照" not in page.locator("body").inner_text(timeout=10_000):
             page.wait_for_function(
                 "() => document.body.innerText.includes('直接定位ETF') && document.body.innerText.includes('选中代码')",
                 timeout=60_000,
             )
-            for text in ("ETF主题", "分析模块", "选择ETF", "模糊搜索", "直接定位ETF", "选中代码"):
-                _assert_text(page, text, failures, "single ETF analysis")
+            for text in ("分析方式", "ETF主题", "分析模块", "选择ETF", "模糊搜索", "直接定位ETF", "选中代码"):
+                _assert_text(page, text, failures, "ETF analysis")
             page.get_by_placeholder("输入代码、名称、主题，例如 300、沪深300、红利、半导体").fill("300")
             page.wait_for_timeout(3_000)
             page.get_by_placeholder("输入完整/部分代码或名称后点击定位").fill("300")
@@ -80,15 +80,22 @@ def main() -> int:
             page.wait_for_timeout(5_000)
             selected_code = _selected_etf_code(page)
             if not selected_code:
-                failures.append("single ETF analysis: no selected ETF code after direct locate")
+                failures.append("ETF analysis: no selected ETF code after direct locate")
             else:
                 page.get_by_placeholder("输入完整/部分代码或名称后点击定位").fill("300 rerun")
                 page.wait_for_timeout(3_000)
                 selected_after_rerun = _selected_etf_code(page)
                 if selected_after_rerun != selected_code:
                     failures.append(
-                        f"single ETF analysis: selected ETF changed after rerun {selected_code} -> {selected_after_rerun}"
+                        f"ETF analysis: selected ETF changed after rerun {selected_code} -> {selected_after_rerun}"
                     )
+            page.get_by_text("批量ETF", exact=True).click(timeout=10_000)
+            page.wait_for_function(
+                "() => document.body.innerText.includes('选择多只ETF') && document.body.innerText.includes('批量补充代码/名称')",
+                timeout=60_000,
+            )
+            for text in ("选择多只ETF", "批量补充代码/名称"):
+                _assert_text(page, text, failures, "ETF batch analysis")
         page.screenshot(path=str(output_dir / "etf_single_analysis.png"), full_page=True)
 
         _click_visible_button(page, "ETF历史记录")

@@ -47,7 +47,7 @@ FEATURE_CONFIG = {
     "index_fund_research": True,  # 指数基金研究 - 指数ETF回撤、长牛方向和邮件报告
     "major_market_etf": True,  # 大盘ETF指数分析 - 主要宽基ETF配置分析
     "etf_toolkit": True,      # ETF策略工具箱 - 全市场筛选、轮动、组合配置
-    "etf_single_analysis": True,  # 单只ETF分析 - 按主题选择ETF后单独分析
+    "etf_single_analysis": True,  # ETF分析 - 支持单只和多只ETF批量分析
     "etf_history": True,      # ETF历史记录 - 查看所有ETF功能历史结果
     "low_price_bull": True,     # 低价擒牛 - 低价高成长股票筛选策略
     "small_cap": True,         # 小市值策略 - 小盘高成长股票筛选策略
@@ -439,7 +439,7 @@ def main():
                 st.session_state.show_etf_toolkit = True
                 clear_page_state("show_etf_toolkit")
 
-            if FEATURE_CONFIG["etf_single_analysis"] and st.button("单只ETF分析", width='stretch', key="nav_etf_single_analysis", help="按主题选择ETF，像单只股票一样做独立分析"):
+            if FEATURE_CONFIG["etf_single_analysis"] and st.button("ETF分析", width='stretch', key="nav_etf_single_analysis", help="按主题选择ETF，支持单只和批量多分析师分析"):
                 st.session_state.show_etf_single_analysis = True
                 clear_page_state("show_etf_single_analysis")
 
