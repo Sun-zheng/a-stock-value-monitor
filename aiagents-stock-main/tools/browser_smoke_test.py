@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
@@ -66,8 +67,28 @@ def main() -> int:
         for text in ("单只ETF分析", "最低成交额", "历史起始日"):
             _assert_text(page, text, failures, "single ETF analysis")
         if "未获取到ETF快照" not in page.locator("body").inner_text(timeout=10_000):
-            for text in ("ETF主题", "分析模块", "选择ETF"):
+            page.wait_for_function(
+                "() => document.body.innerText.includes('直接定位ETF') && document.body.innerText.includes('选中代码')",
+                timeout=60_000,
+            )
+            for text in ("ETF主题", "分析模块", "选择ETF", "模糊搜索", "直接定位ETF", "选中代码"):
                 _assert_text(page, text, failures, "single ETF analysis")
+            page.get_by_placeholder("输入代码、名称、主题，例如 300、沪深300、红利、半导体").fill("300")
+            page.wait_for_timeout(3_000)
+            page.get_by_placeholder("输入完整/部分代码或名称后点击定位").fill("300")
+            page.get_by_role("button", name="定位ETF").click(timeout=10_000)
+            page.wait_for_timeout(5_000)
+            selected_code = _selected_etf_code(page)
+            if not selected_code:
+                failures.append("single ETF analysis: no selected ETF code after direct locate")
+            else:
+                page.get_by_placeholder("输入完整/部分代码或名称后点击定位").fill("300 rerun")
+                page.wait_for_timeout(3_000)
+                selected_after_rerun = _selected_etf_code(page)
+                if selected_after_rerun != selected_code:
+                    failures.append(
+                        f"single ETF analysis: selected ETF changed after rerun {selected_code} -> {selected_after_rerun}"
+                    )
         page.screenshot(path=str(output_dir / "etf_single_analysis.png"), full_page=True)
 
         _click_visible_button(page, "ETF历史记录")
@@ -108,6 +129,12 @@ def _assert_text(page, text: str, failures: list[str], context: str) -> None:
     body = page.locator("body").inner_text(timeout=10_000)
     if text not in body:
         failures.append(f"{context}: missing text {text}")
+
+
+def _selected_etf_code(page) -> str | None:
+    body = page.locator("body").inner_text(timeout=10_000)
+    match = re.search(r"选中代码\s+(\d{6})", body)
+    return match.group(1) if match else None
 
 
 if __name__ == "__main__":
